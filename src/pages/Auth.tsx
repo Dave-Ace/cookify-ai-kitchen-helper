@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -6,15 +7,83 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChefHat } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
+import { toast } from "@/hooks/use-toast";
 
 const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState("signin");
+  const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
     // Auth logic will be implemented when backend is connected
-    setTimeout(() => setIsLoading(false), 1000);
+    console.log("Handling Submit");
+    const formData = new FormData(e.currentTarget);
+    const email = formData.get("email");
+    const password = formData.get("password");
+    const firstname = formData.get("firstname");
+    const lastname = formData.get("lastname");
+    
+    // Determine if this is a signup or signin form
+    const isSignUp = firstname !== null && lastname !== null;
+    const baseUrl = "https://localhost:5001/users";
+    const endpoint = isSignUp ? `${baseUrl}/register` : `${baseUrl}/login`;
+    const successMessage = isSignUp ? "Account created successfully!" : "Signed in successfully!";
+    
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(isSignUp ? { email, password, firstname, lastname } : { email, password }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "An error occurred" }));
+        throw new Error(errorData.message || `${isSignUp ? "Registration" : "Login"} failed`);
+      }
+
+      // The API returns a plain string token, not JSON
+      const token = await response.text();
+      
+      // Remove quotes from the token string if present
+      const cleanToken = token.trim().replace(/^["']|["']$/g, "");
+      console.log(token);
+      console.log(cleanToken);
+      // Store the token string in localStorage
+      if (cleanToken && cleanToken !== "") {
+        localStorage.setItem("token", cleanToken);
+      } else {
+        throw new Error("No token received from server");
+      }
+
+      console.log("Logged in successfully");
+      
+      // Show success toast
+      toast({
+        title: "Success",
+        description: successMessage,
+        variant: "default",
+      });
+
+      // Switch to signin tab after successful registration
+      if (isSignUp) {
+        setActiveTab("signin");
+      } else {
+        // Redirect to dashboard after successful sign in
+        navigate("/dashboard");
+      }
+    } catch (error) {
+      console.error(error);
+      // Show error toast
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -30,7 +99,7 @@ const Auth = () => {
           <p className="text-muted-foreground">Start your culinary journey today</p>
         </div>
 
-        <Tabs defaultValue="signup" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="signup">Sign Up</TabsTrigger>
             <TabsTrigger value="signin">Sign In</TabsTrigger>
@@ -47,9 +116,30 @@ const Auth = () => {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
+                    <Label htmlFor="signup-firstname">First Name</Label>
+                    <Input
+                      id="signup-firstname"
+                      name="firstname"
+                      type="text"
+                      placeholder="John"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-lastname">Last Name</Label>
+                    <Input
+                      id="signup-lastname"
+                      name="lastname"
+                      type="text"
+                      placeholder="Doe"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="signup-email">Email</Label>
                     <Input
                       id="signup-email"
+                      name="email"
                       type="email"
                       placeholder="you@example.com"
                       required
@@ -59,6 +149,7 @@ const Auth = () => {
                     <Label htmlFor="signup-password">Password</Label>
                     <Input
                       id="signup-password"
+                      name="password"
                       type="password"
                       placeholder="••••••••"
                       required
@@ -95,6 +186,7 @@ const Auth = () => {
                     <Label htmlFor="signin-email">Email</Label>
                     <Input
                       id="signin-email"
+                      name="email"
                       type="email"
                       placeholder="you@example.com"
                       required
@@ -104,6 +196,7 @@ const Auth = () => {
                     <Label htmlFor="signin-password">Password</Label>
                     <Input
                       id="signin-password"
+                      name="password"
                       type="password"
                       placeholder="••••••••"
                       required
