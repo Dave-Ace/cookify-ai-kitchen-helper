@@ -8,11 +8,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChefHat } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/context/AuthContext";
 
 const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("signin");
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -24,20 +26,20 @@ const Auth = () => {
     const password = formData.get("password");
     const firstname = formData.get("firstname");
     const lastname = formData.get("lastname");
-    
+
     // Determine if this is a signup or signin form
     const isSignUp = firstname !== null && lastname !== null;
     const baseUrl = "https://localhost:5001/users";
     const endpoint = isSignUp ? `${baseUrl}/register` : `${baseUrl}/login`;
     const successMessage = isSignUp ? "Account created successfully!" : "Signed in successfully!";
-    
+
     try {
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(isSignUp ? { email, password, firstname, lastname } : { email, password }),
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: "An error occurred" }));
         throw new Error(errorData.message || `${isSignUp ? "Registration" : "Login"} failed`);
@@ -45,20 +47,20 @@ const Auth = () => {
 
       // The API returns a plain string token, not JSON
       const token = await response.text();
-      
+
       // Remove quotes from the token string if present
       const cleanToken = token.trim().replace(/^["']|["']$/g, "");
       console.log(token);
       console.log(cleanToken);
       // Store the token string in localStorage
       if (cleanToken && cleanToken !== "") {
-        localStorage.setItem("token", cleanToken);
+        login(cleanToken);
       } else {
         throw new Error("No token received from server");
       }
 
       console.log("Logged in successfully");
-      
+
       // Show success toast
       toast({
         title: "Success",
@@ -123,6 +125,7 @@ const Auth = () => {
                       type="text"
                       placeholder="John"
                       required
+                      autoComplete="given-name"
                     />
                   </div>
                   <div className="space-y-2">
@@ -133,6 +136,7 @@ const Auth = () => {
                       type="text"
                       placeholder="Doe"
                       required
+                      autoComplete="family-name"
                     />
                   </div>
                   <div className="space-y-2">
@@ -143,6 +147,7 @@ const Auth = () => {
                       type="email"
                       placeholder="you@example.com"
                       required
+                      autoComplete="email"
                     />
                   </div>
                   <div className="space-y-2">
@@ -153,6 +158,7 @@ const Auth = () => {
                       type="password"
                       placeholder="••••••••"
                       required
+                      autoComplete="new-password"
                     />
                   </div>
                 </CardContent>
@@ -190,6 +196,7 @@ const Auth = () => {
                       type="email"
                       placeholder="you@example.com"
                       required
+                      autoComplete="email"
                     />
                   </div>
                   <div className="space-y-2">
@@ -200,6 +207,7 @@ const Auth = () => {
                       type="password"
                       placeholder="••••••••"
                       required
+                      autoComplete="current-password"
                     />
                   </div>
                 </CardContent>

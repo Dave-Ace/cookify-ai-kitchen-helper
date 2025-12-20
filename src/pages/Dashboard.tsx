@@ -1,17 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+
 import { Badge } from "@/components/ui/badge";
-import { ChefHat, Plus, Search, X, ShoppingCart, BookmarkPlus, BookmarkCheck, Lightbulb, Copy, UtensilsCrossed, Heart, Leaf, ChevronDown, ChevronUp, Edit } from "lucide-react";
+import { ChefHat, Plus, Search, X, ShoppingCart, BookmarkPlus, BookmarkCheck, Lightbulb, Copy, UtensilsCrossed, Heart, Leaf } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
+import Navbar from "@/components/Navbar";
 
 // Ingredient substitutions database
 const ingredientSubstitutions: Record<string, string[]> = {
@@ -21,6 +23,14 @@ const ingredientSubstitutions: Record<string, string[]> = {
   "flour": ["almond flour", "coconut flour", "oat flour"],
   "sugar": ["honey", "maple syrup", "stevia", "agave nectar"],
   "feta cheese": ["goat cheese", "ricotta cheese", "cottage cheese"],
+};
+
+type GroceryItem = {
+  id: string;
+  name: string;
+  checked: boolean;
+  category?: "have" | "need" | "manual";
+  source: string;
 };
 
 type Recipe = {
@@ -52,6 +62,34 @@ type ApiResponse = {
   suggested_recipes: ApiRecipe[];
 };
 
+// User Recipes Types
+type UserRecipeIngredients = {
+  providedIngredient: string[];
+  additionalIngredient: string[];
+};
+
+type UserRecipe = {
+  id: string;
+  image: string | null;
+  recipeName: string;
+  description: string;
+  ingredients: UserRecipeIngredients;
+  instructions: string[];
+  cookingTime: string;
+  healthTip: string;
+  difficulty: string;
+};
+
+type UserRecipesResponse = {
+  items: UserRecipe[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+};
+
 const Dashboard = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -64,21 +102,105 @@ const Dashboard = () => {
   const [lifestyle, setLifestyle] = useState<string[]>([]);
   const [lifestyleInputValue, setLifestyleInputValue] = useState("");
   const [includeNewIngredients, setIncludeNewIngredients] = useState(false);
-  const [showResults, setShowResults] = useState(false);
+
   const [savedRecipes, setSavedRecipes] = useState<Recipe[]>([]);
-  const [groceryList, setGroceryList] = useState<string[]>([]);
+
+  const [groceryList, setGroceryList] = useState<GroceryItem[]>([]);
+  const [manualGroceryInput, setManualGroceryInput] = useState("");
   const [activeTab, setActiveTab] = useState("search");
   const [apiRecipes, setApiRecipes] = useState<ApiRecipe[]>([]);
   const [isLoadingRecipes, setIsLoadingRecipes] = useState(false);
-  const [isFormExpanded, setIsFormExpanded] = useState(true);
 
+  const [userRecipes, setUserRecipes] = useState<UserRecipe[]>([]);
+  const [isLoadingUserRecipes, setIsLoadingUserRecipes] = useState(false);
+  const [selectedRecipe, setSelectedRecipe] = useState<UserRecipe | null>(null);
+
+  // Load saved recipes from localStorage
   // Load saved recipes from localStorage
   useEffect(() => {
     const saved = localStorage.getItem("savedRecipes");
     if (saved) {
       setSavedRecipes(JSON.parse(saved));
     }
+
+    // Load grocery list
+    const savedGrocery = localStorage.getItem("groceryList");
+    if (savedGrocery) {
+      setGroceryList(JSON.parse(savedGrocery));
+    }
   }, []);
+
+  // Save grocery list to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem("groceryList", JSON.stringify(groceryList));
+  }, [groceryList]);
+
+  // Fetch user recipes from API
+  const fetchUserRecipes = useCallback(async () => {
+    setIsLoadingUserRecipes(true);
+    try {
+      const token = localStorage.getItem("token");
+
+      if (!token || token === "undefined" || token.trim() === "") {
+        toast({
+          title: "Authentication Required",
+          description: "Please sign in to view your recipes",
+          variant: "destructive",
+        });
+        setIsLoadingUserRecipes(false);
+        return;
+      }
+
+      const params = new URLSearchParams({
+        PageNumber: "1",
+        PageSize: "5",
+      });
+
+      const response = await fetch(`https://localhost:5001/userRecipes?${params.toString()}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.status === 401) {
+        localStorage.removeItem("token");
+        toast({
+          title: "Session Expired",
+          description: "Please sign in again",
+          variant: "destructive",
+        });
+        navigate("/auth");
+        setIsLoadingUserRecipes(false);
+        return;
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Failed to fetch user recipes" }));
+        throw new Error(errorData.message || "Failed to fetch user recipes");
+      }
+
+      const data: UserRecipesResponse = await response.json();
+      setUserRecipes(data.items || []);
+    } catch (error) {
+      console.error("Error fetching user recipes:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to fetch user recipes",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingUserRecipes(false);
+    }
+  }, [toast, navigate]);
+
+  // Fetch user recipes when saved tab is active
+  useEffect(() => {
+    if (activeTab === "saved") {
+      fetchUserRecipes();
+    }
+  }, [activeTab, fetchUserRecipes]);
 
   const addIngredient = () => {
     if (inputValue.trim()) {
@@ -135,7 +257,7 @@ const Dashboard = () => {
     }
 
     setIsLoadingRecipes(true);
-    setShowResults(false);
+
 
     try {
       // Combine all fields into comma-separated strings
@@ -146,7 +268,7 @@ const Dashboard = () => {
 
       // Get token from localStorage
       const token = localStorage.getItem("token");
-      
+
       // Check if token is missing or undefined
       if (!token || token === "undefined" || token.trim() === "") {
         toast({
@@ -158,12 +280,12 @@ const Dashboard = () => {
         navigate("/auth");
         return;
       }
-      
+
       // Build query parameters
       const params = new URLSearchParams({
         ingredients: ingredientsString,
       });
-      
+
       if (dietaryString) {
         params.append("dietary_restrictions", dietaryString);
       }
@@ -176,7 +298,7 @@ const Dashboard = () => {
       if (includeNewIngredients) {
         params.append("include_new_ingredients", "true");
       }
-      
+
       // Make GET request with Authorization header
       const response = await fetch(`https://localhost:5001/recipes?${params.toString()}`, {
         method: "GET",
@@ -186,6 +308,18 @@ const Dashboard = () => {
         },
       });
 
+      if (response.status === 401) {
+        localStorage.removeItem("token");
+        toast({
+          title: "Session Expired",
+          description: "Please sign in again",
+          variant: "destructive",
+        });
+        navigate("/auth");
+        setIsLoadingRecipes(false);
+        return;
+      }
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: "Failed to fetch recipes" }));
         throw new Error(errorData.message || "Failed to fetch recipes");
@@ -193,14 +327,9 @@ const Dashboard = () => {
 
       const data: ApiResponse = await response.json();
       setApiRecipes(data.suggested_recipes || []);
-      setShowResults(true);
-      setIsFormExpanded(false); // Collapse form when results are shown
 
-      // Collect missing ingredients for grocery list
-      const allMissing = (data.suggested_recipes || []).flatMap(
-        (recipe) => recipe.ingredients.additional_needed || []
-      );
-      setGroceryList([...new Set(allMissing)]);
+
+
 
       toast({
         title: "Success",
@@ -221,7 +350,7 @@ const Dashboard = () => {
 
   const saveRecipe = (recipe: Recipe) => {
     const isAlreadySaved = savedRecipes.some(r => r.id === recipe.id);
-    
+
     if (isAlreadySaved) {
       const updated = savedRecipes.filter(r => r.id !== recipe.id);
       setSavedRecipes(updated);
@@ -245,9 +374,92 @@ const Dashboard = () => {
     return savedRecipes.some(r => r.id === recipeId);
   };
 
+  const addToGroceryList = (ingredients: { have: string[], need: string[] }, recipeTitle: string) => {
+    const newItems: GroceryItem[] = [
+      ...ingredients.have.map(name => ({
+        id: crypto.randomUUID(),
+        name,
+        checked: true,
+        category: "have" as const,
+        source: recipeTitle
+      })),
+      ...ingredients.need.map(name => ({
+        id: crypto.randomUUID(),
+        name,
+        checked: false,
+        category: "need" as const,
+        source: recipeTitle
+      }))
+    ];
+
+    // Filter out duplicates based on name
+    const currentNames = new Set(groceryList.map(i => i.name.toLowerCase()));
+    const uniqueNewItems = newItems.filter(i => !currentNames.has(i.name.toLowerCase()));
+
+    if (uniqueNewItems.length > 0) {
+      setGroceryList(prev => [...prev, ...uniqueNewItems]);
+      toast({
+        title: "Added to List",
+        description: `Added ${uniqueNewItems.length} items to your grocery list.`,
+      });
+    } else {
+      toast({
+        title: "Already in List",
+        description: "All these items are already in your list.",
+      });
+    }
+  };
+
+  const toggleGroceryItem = (id: string) => {
+    setGroceryList(groceryList.map(item =>
+      item.id === id ? { ...item, checked: !item.checked } : item
+    ));
+  };
+
+  const removeGroceryItem = (id: string) => {
+    setGroceryList(groceryList.filter(item => item.id !== id));
+  };
+
+  const addManualGroceryItem = () => {
+    if (manualGroceryInput.trim()) {
+      const newItem: GroceryItem = {
+        id: crypto.randomUUID(),
+        name: manualGroceryInput.trim(),
+        checked: false,
+        category: "manual",
+        source: "Manual Items"
+      };
+      setGroceryList([...groceryList, newItem]);
+      setManualGroceryInput("");
+    }
+  };
+
+  const clearGroceryList = () => {
+    if (confirm("Are you sure you want to clear your grocery list?")) {
+      setGroceryList([]);
+    }
+  };
+
   const copyGroceryList = () => {
-    const listText = groceryList.map((item, i) => `${i + 1}. ${item}`).join("\n");
-    navigator.clipboard.writeText(listText);
+    // Group items by source
+    const groupedItems = groceryList.reduce((acc, item) => {
+      const source = item.source || "Other";
+      if (!acc[source]) acc[source] = [];
+      acc[source].push(item);
+      return acc;
+    }, {} as Record<string, GroceryItem[]>);
+
+    let text = "🛒 Grocery List\n\n";
+
+    Object.entries(groupedItems).forEach(([source, items]) => {
+      text += `## ${source}\n`;
+      items.forEach(item => {
+        text += `${item.checked ? "[x]" : "[ ]"} ${item.name} (${item.category === "have" ? "Have" : item.category === "need" ? "Need" : "Manual"})\n`;
+      });
+      text += "\n";
+    });
+
+    navigator.clipboard.writeText(text);
     toast({
       title: "Copied!",
       description: "Grocery list copied to clipboard.",
@@ -267,75 +479,23 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <nav className="border-b border-border bg-card">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <NavLink to="/" className="flex items-center gap-2">
-            <ChefHat className="w-8 h-8 text-primary" />
-            <span className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent">
-              Cookify
-            </span>
-          </NavLink>
-          <Button variant="outline" asChild>
-            <NavLink to="/">Back to Home</NavLink>
-          </Button>
-        </div>
-      </nav>
+      <Navbar />
 
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3 mb-8">
-              <TabsTrigger value="search">
-                <Search className="w-4 h-4 mr-2" />
-                Search Recipes
-              </TabsTrigger>
-              <TabsTrigger value="saved">
-                <BookmarkCheck className="w-4 h-4 mr-2" />
-                Saved ({savedRecipes.length})
-              </TabsTrigger>
-              <TabsTrigger value="grocery">
-                <ShoppingCart className="w-4 h-4 mr-2" />
-                Grocery List
-              </TabsTrigger>
-            </TabsList>
+      <div className="container mx-auto px-4 py-8 pt-24">
+        <div className="grid lg:grid-cols-12 gap-8">
+          {/* LEFT SIDEBAR - INPUTS */}
+          <div className="lg:col-span-4 space-y-6">
+            <div className="lg:sticky lg:top-24 space-y-6">
+              <div className="space-y-2">
+                <h2 className="text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent">
+                  Kitchen AI
+                </h2>
+                <p className="text-muted-foreground">
+                  Tell us what you have, we'll tell you what to cook.
+                </p>
+              </div>
 
-            <TabsContent value="search" className="space-y-6">
-              {!showResults && (
-                <div className="text-center mb-8">
-                  <h1 className="text-4xl font-bold mb-2 bg-gradient-hero bg-clip-text text-transparent">
-                    Find Your Perfect Recipe
-                  </h1>
-                  <p className="text-muted-foreground text-lg">
-                    Enter the ingredients you have, and let our AI chef work its magic.
-                  </p>
-                </div>
-              )}
-
-              {/* Collapsible Form Section */}
-              <Collapsible open={isFormExpanded} onOpenChange={setIsFormExpanded}>
-                {showResults && (
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-2xl font-bold">Suggested Recipes</h2>
-                    <CollapsibleTrigger asChild>
-                      <Button variant="outline" size="sm">
-                        {isFormExpanded ? (
-                          <>
-                            <ChevronUp className="w-4 h-4 mr-2" />
-                            Hide Search Form
-                          </>
-                        ) : (
-                          <>
-                            <Edit className="w-4 h-4 mr-2" />
-                            Edit Search
-                          </>
-                        )}
-                      </Button>
-                    </CollapsibleTrigger>
-                  </div>
-                )}
-
-                <CollapsibleContent className="space-y-6">
-                  {/* Ingredients Section */}
+              {/* Ingredients Card */}
               <Card className="shadow-lg border-2">
                 <CardHeader className="pb-4">
                   <div className="flex items-center gap-3">
@@ -343,49 +503,49 @@ const Dashboard = () => {
                       <UtensilsCrossed className="w-5 h-5 text-primary" />
                     </div>
                     <div>
-                      <CardTitle className="text-xl">Your Ingredients</CardTitle>
-                      <CardDescription>
-                        Add ingredients you have available in your kitchen
-                      </CardDescription>
+                      <CardTitle className="text-lg">Ingredients</CardTitle>
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex gap-2">
                     <Input
-                      placeholder="e.g., chicken, tomatoes, onions"
+                      placeholder="Add ingredient..."
                       value={inputValue}
                       onChange={(e) => setInputValue(e.target.value)}
                       onKeyPress={(e) => e.key === "Enter" && addIngredient()}
-                      className="flex-1 h-11"
+                      className="flex-1"
                     />
-                    <Button onClick={addIngredient} className="bg-gradient-hero h-11 px-6">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add
+                    <Button onClick={addIngredient} size="icon" className="bg-gradient-hero shrink-0">
+                      <Plus className="w-4 h-4" />
                     </Button>
                   </div>
 
-                  {ingredients.length > 0 && (
-                    <div className="flex flex-wrap gap-2 pt-2 border-t">
+                  {ingredients.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
                       {ingredients.map((ingredient, index) => (
                         <Badge
                           key={index}
                           variant="secondary"
-                          className="text-sm py-1.5 px-3 flex items-center gap-2 bg-primary/10 hover:bg-primary/20 transition-colors"
+                          className="text-sm py-1 px-2 flex items-center gap-1 bg-primary/10 hover:bg-primary/20 transition-colors"
                         >
                           {ingredient}
                           <X
-                            className="w-3.5 h-3.5 cursor-pointer hover:text-destructive transition-colors"
+                            className="w-3 h-3 cursor-pointer hover:text-destructive transition-colors"
                             onClick={() => removeIngredient(index)}
                           />
                         </Badge>
                       ))}
                     </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic">
+                      No ingredients added yet.
+                    </p>
                   )}
                 </CardContent>
               </Card>
 
-              {/* Preferences Section */}
+              {/* Preferences Card */}
               <Card className="shadow-lg border-2">
                 <CardHeader className="pb-4">
                   <div className="flex items-center gap-3">
@@ -393,323 +553,253 @@ const Dashboard = () => {
                       <Heart className="w-5 h-5 text-primary" />
                     </div>
                     <div>
-                      <CardTitle className="text-xl">Your Preferences</CardTitle>
-                      <CardDescription>
-                        Customize your recipe search with dietary, health, and lifestyle preferences
-                      </CardDescription>
+                      <CardTitle className="text-lg">Preferences</CardTitle>
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {/* Dietary Restrictions */}
-                  <div className="space-y-2">
-                    <Label htmlFor="dietary" className="text-base font-semibold flex items-center gap-2">
-                      <Leaf className="w-4 h-4 text-primary" />
-                      Dietary Restrictions
-                      <span className="text-xs font-normal text-muted-foreground">(optional)</span>
-                    </Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="dietary"
-                        placeholder="e.g., vegetarian, gluten-free, halal"
-                        value={dietaryInputValue}
-                        onChange={(e) => setDietaryInputValue(e.target.value)}
-                        onKeyPress={(e) => e.key === "Enter" && addDietaryRestriction()}
-                        className="flex-1 h-10"
-                      />
-                      <Button onClick={addDietaryRestriction} variant="outline" size="sm" className="h-10">
-                        <Plus className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    {dietaryRestrictions.length > 0 && (
-                      <div className="flex flex-wrap gap-2 pt-2">
-                        {dietaryRestrictions.map((restriction, index) => (
-                          <Badge
-                            key={index}
-                            variant="secondary"
-                            className="text-sm py-1.5 px-3 flex items-center gap-2 bg-green-50 dark:bg-green-950/30 hover:bg-green-100 dark:hover:bg-green-950/50 transition-colors"
-                          >
-                            {restriction}
-                            <X
-                              className="w-3.5 h-3.5 cursor-pointer hover:text-destructive transition-colors"
-                              onClick={() => removeDietaryRestriction(index)}
+                  <Accordion type="multiple" className="w-full">
+                    {/* Dietary */}
+                    <AccordionItem value="dietary">
+                      <AccordionTrigger>Dietary Restrictions</AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-2 pt-2 px-1">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="e.g. vegan"
+                              value={dietaryInputValue}
+                              onChange={(e) => setDietaryInputValue(e.target.value)}
+                              onKeyPress={(e) => e.key === "Enter" && addDietaryRestriction()}
+                              className="h-9"
                             />
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                            <Button onClick={addDietaryRestriction} variant="outline" size="icon" className="h-9 shrink-0">
+                              <Plus className="w-4 h-4" />
+                            </Button>
+                          </div>
+                          {dietaryRestrictions.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {dietaryRestrictions.map((item, index) => (
+                                <Badge key={index} variant="secondary" className="text-xs bg-green-50 dark:bg-green-950/30">
+                                  {item}
+                                  <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => removeDietaryRestriction(index)} />
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
 
-                  {/* Health Restrictions */}
-                  <div className="space-y-2 pt-4 border-t">
-                    <Label htmlFor="health" className="text-base font-semibold flex items-center gap-2">
-                      <Heart className="w-4 h-4 text-primary" />
-                      Health Restrictions
-                      <span className="text-xs font-normal text-muted-foreground">(optional)</span>
-                    </Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="health"
-                        placeholder="e.g., diabetes, high blood pressure, allergies"
-                        value={healthInputValue}
-                        onChange={(e) => setHealthInputValue(e.target.value)}
-                        onKeyPress={(e) => e.key === "Enter" && addHealthRestriction()}
-                        className="flex-1 h-10"
-                      />
-                      <Button onClick={addHealthRestriction} variant="outline" size="sm" className="h-10">
-                        <Plus className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    {healthRestrictions.length > 0 && (
-                      <div className="flex flex-wrap gap-2 pt-2">
-                        {healthRestrictions.map((restriction, index) => (
-                          <Badge
-                            key={index}
-                            variant="secondary"
-                            className="text-sm py-1.5 px-3 flex items-center gap-2 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 transition-colors"
-                          >
-                            {restriction}
-                            <X
-                              className="w-3.5 h-3.5 cursor-pointer hover:text-destructive transition-colors"
-                              onClick={() => removeHealthRestriction(index)}
+                    {/* Health */}
+                    <AccordionItem value="health">
+                      <AccordionTrigger>Health Conditions</AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-2 pt-2 px-1">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="e.g. peanut allergy"
+                              value={healthInputValue}
+                              onChange={(e) => setHealthInputValue(e.target.value)}
+                              onKeyPress={(e) => e.key === "Enter" && addHealthRestriction()}
+                              className="h-9"
                             />
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                            <Button onClick={addHealthRestriction} variant="outline" size="icon" className="h-9 shrink-0">
+                              <Plus className="w-4 h-4" />
+                            </Button>
+                          </div>
+                          {healthRestrictions.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {healthRestrictions.map((item, index) => (
+                                <Badge key={index} variant="secondary" className="text-xs bg-red-50 dark:bg-red-950/30">
+                                  {item}
+                                  <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => removeHealthRestriction(index)} />
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
 
-                  {/* Lifestyle */}
-                  <div className="space-y-2 pt-4 border-t">
-                    <Label htmlFor="lifestyle" className="text-base font-semibold flex items-center gap-2">
-                      <Leaf className="w-4 h-4 text-primary" />
-                      Lifestyle
-                      <span className="text-xs font-normal text-muted-foreground">(optional)</span>
-                    </Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="lifestyle"
-                        placeholder="e.g., vegan, keto, paleo"
-                        value={lifestyleInputValue}
-                        onChange={(e) => setLifestyleInputValue(e.target.value)}
-                        onKeyPress={(e) => e.key === "Enter" && addLifestyle()}
-                        className="flex-1 h-10"
-                      />
-                      <Button onClick={addLifestyle} variant="outline" size="sm" className="h-10">
-                        <Plus className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    {lifestyle.length > 0 && (
-                      <div className="flex flex-wrap gap-2 pt-2">
-                        {lifestyle.map((item, index) => (
-                          <Badge
-                            key={index}
-                            variant="secondary"
-                            className="text-sm py-1.5 px-3 flex items-center gap-2 bg-blue-50 dark:bg-blue-950/30 hover:bg-blue-100 dark:hover:bg-blue-950/50 transition-colors"
-                          >
-                            {item}
-                            <X
-                              className="w-3.5 h-3.5 cursor-pointer hover:text-destructive transition-colors"
-                              onClick={() => removeLifestyle(index)}
+                    {/* Lifestyle */}
+                    <AccordionItem value="lifestyle">
+                      <AccordionTrigger>Lifestyle Goals</AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-2 pt-2 px-1">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="e.g. keto"
+                              value={lifestyleInputValue}
+                              onChange={(e) => setLifestyleInputValue(e.target.value)}
+                              onKeyPress={(e) => e.key === "Enter" && addLifestyle()}
+                              className="h-9"
                             />
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+                            <Button onClick={addLifestyle} variant="outline" size="icon" className="h-9 shrink-0">
+                              <Plus className="w-4 h-4" />
+                            </Button>
+                          </div>
+                          {lifestyle.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {lifestyle.map((item, index) => (
+                                <Badge key={index} variant="secondary" className="text-xs bg-blue-50 dark:bg-blue-950/30">
+                                  {item}
+                                  <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => removeLifestyle(index)} />
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
 
-              {/* Options & Search Button */}
-              <Card className="shadow-lg border-2">
-                <CardContent className="pt-6">
-                  <div className="space-y-4">
-                    <div className="flex items-center space-x-3 p-4 rounded-lg bg-muted/50">
+                  <div className="pt-2">
+                    <div className="flex items-center space-x-2 mb-4">
                       <Checkbox
                         id="new-ingredients"
                         checked={includeNewIngredients}
                         onCheckedChange={(checked) => setIncludeNewIngredients(checked as boolean)}
                       />
-                      <label
-                        htmlFor="new-ingredients"
-                        className="text-sm font-medium leading-none cursor-pointer flex-1"
-                      >
-                        Include recipes with additional ingredients I don't have
+                      <label htmlFor="new-ingredients" className="text-sm cursor-pointer">
+                        Allow extra ingredients
                       </label>
                     </div>
 
                     <Button
-                      onClick={handleSearch}
+                      onClick={() => {
+                        setActiveTab("search"); // Ensure we switch to results view
+                        handleSearch();
+                      }}
                       disabled={ingredients.length === 0 || isLoadingRecipes}
+                      className="w-full bg-gradient-hero hover:opacity-90 transition-opacity"
                       size="lg"
-                      className="w-full bg-gradient-hero hover:opacity-90 transition-opacity h-12 text-base font-semibold"
                     >
                       {isLoadingRecipes ? (
                         <>
-                          <div className="w-5 h-5 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          Searching...
+                          <div className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          Thinking...
                         </>
                       ) : (
                         <>
-                          <Search className="w-5 h-5 mr-2" />
-                          Find Recipes
+                          <Lightbulb className="w-4 h-4 mr-2" />
+                          Generate Recipes
                         </>
                       )}
                     </Button>
                   </div>
                 </CardContent>
               </Card>
-                </CollapsibleContent>
-              </Collapsible>
+            </div>
+          </div>
 
-              {/* Form Summary when collapsed */}
-              {showResults && !isFormExpanded && (
-                <Card className="bg-muted/30 border-dashed">
-                  <CardContent className="pt-4">
-                    <div className="flex flex-wrap gap-2 items-center">
-                      <span className="text-sm font-semibold text-muted-foreground">Search criteria:</span>
-                      {ingredients.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {ingredients.slice(0, 5).map((ing, i) => (
-                            <Badge key={i} variant="secondary" className="text-xs">
-                              {ing}
-                            </Badge>
-                          ))}
-                          {ingredients.length > 5 && (
-                            <Badge variant="secondary" className="text-xs">
-                              +{ingredients.length - 5} more
-                            </Badge>
-                          )}
-                        </div>
-                      )}
-                      {(dietaryRestrictions.length > 0 || healthRestrictions.length > 0 || lifestyle.length > 0) && (
-                        <span className="text-xs text-muted-foreground">• Preferences applied</span>
-                      )}
+          {/* RIGHT CONTENT - TABS */}
+          <div className="lg:col-span-8">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="grid w-full grid-cols-3 mb-8">
+                <TabsTrigger value="search">
+                  <Search className="w-4 h-4 mr-2" />
+                  Results
+                </TabsTrigger>
+                <TabsTrigger value="saved">
+                  <BookmarkCheck className="w-4 h-4 mr-2" />
+                  My Recipes ({userRecipes.length})
+                </TabsTrigger>
+                <TabsTrigger value="grocery">
+                  <ShoppingCart className="w-4 h-4 mr-2" />
+                  Grocery List
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="search" className="space-y-6">
+                {/* Search Results Display */}
+                {apiRecipes.length === 0 && !isLoadingRecipes ? (
+                  <div className="text-center py-20 bg-muted/20 rounded-xl border-2 border-dashed">
+                    <div className="p-4 rounded-full bg-primary/10 w-fit mx-auto mb-4">
+                      <ChefHat className="w-10 h-10 text-primary" />
                     </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {showResults && (
-                <div className="space-y-4">
-                  {apiRecipes.length > 0 && (
-                    <div className="flex justify-end">
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setShowResults(false);
-                          setIsFormExpanded(true);
-                          setApiRecipes([]);
-                        }}
-                      >
-                        <Search className="w-4 h-4 mr-2" />
-                        New Search
-                      </Button>
-                    </div>
-                  )}
-                  {apiRecipes.length === 0 ? (
-                    <Card className="p-12 text-center">
-                      <p className="text-muted-foreground">No recipes found. Try adjusting your search criteria.</p>
-                    </Card>
-                  ) : (
-                    <div className="grid gap-6">
-                      {apiRecipes.map((recipe, index) => {
-                        const recipeId = `recipe-${index}`;
-                        const isSaved = isRecipeSaved(recipeId);
-                        return (
-                          <Card key={index} className="overflow-hidden hover:shadow-lg transition-shadow border-2">
-                            <div className="md:flex">
-                              <img
-                                src="/placeholder.svg"
-                                alt={recipe.recipe_name}
-                                className="w-full md:w-64 h-64 object-cover bg-muted"
-                              />
-                              <div className="flex-1">
-                                <CardHeader>
-                                  <CardTitle className="text-2xl">{recipe.recipe_name}</CardTitle>
-                                  <div className="flex gap-4 text-sm text-muted-foreground mt-2">
-                                    <span>⏱️ {recipe.cooking_time}</span>
-                                    <span>📊 {recipe.difficulty}</span>
-                                  </div>
-                                  {recipe.description && (
-                                    <p className="text-muted-foreground mt-2">{recipe.description}</p>
-                                  )}
-                                </CardHeader>
-                                <CardContent className="space-y-4">
-                                  {/* Ingredients */}
-                                  <div>
-                                    <p className="text-sm font-semibold mb-2">Ingredients:</p>
-                                    <div className="space-y-2">
-                                      {recipe.ingredients.user_provided.length > 0 && (
-                                        <div>
-                                          <p className="text-xs text-muted-foreground mb-1">You have:</p>
-                                          <div className="flex flex-wrap gap-2">
-                                            {recipe.ingredients.user_provided.map((ing, i) => (
-                                              <Badge key={i} variant="secondary" className="bg-green-50 dark:bg-green-950/30">
-                                                {ing}
-                                              </Badge>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
-                                      {recipe.ingredients.additional_needed.length > 0 && (
-                                        <div>
-                                          <p className="text-xs text-muted-foreground mb-1">Additional needed:</p>
-                                          <div className="flex flex-wrap gap-2">
-                                            {recipe.ingredients.additional_needed.map((ing, i) => (
-                                              <Badge key={i} variant="outline" className="border-orange-300 text-orange-700 dark:text-orange-400">
-                                                {ing}
-                                              </Badge>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  {/* Instructions */}
-                                  {recipe.instructions && (
-                                    <div>
-                                      <p className="text-sm font-semibold mb-2">Instructions:</p>
-                                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                                        {recipe.instructions}
-                                      </p>
-                                    </div>
-                                  )}
-
-                                  {/* Health Tip */}
+                    <h3 className="text-xl font-semibold mb-2">Ready to Cook?</h3>
+                    <p className="text-muted-foreground max-w-md mx-auto">
+                      Add some ingredients in the sidebar and click "Generate Recipes" to see what you can make!
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid gap-6">
+                    {apiRecipes.map((recipe, index) => {
+                      const recipeId = `recipe-${index}`;
+                      const isSaved = isRecipeSaved(recipeId);
+                      return (
+                        <Card key={index} className="overflow-hidden hover:shadow-lg transition-shadow border-2">
+                          <div className="md:flex">
+                            <img
+                              src="/placeholder.svg"
+                              alt={recipe.recipe_name}
+                              className="w-full md:w-56 h-56 object-cover bg-muted"
+                            />
+                            <div className="flex-1 p-2">
+                              <CardHeader className="py-3">
+                                <CardTitle className="text-xl">{recipe.recipe_name}</CardTitle>
+                                <div className="flex gap-4 text-sm text-muted-foreground mt-1">
+                                  <span>⏱️ {recipe.cooking_time}</span>
+                                  <span>📊 {recipe.difficulty}</span>
+                                </div>
+                                {recipe.description && (
+                                  <p className="text-muted-foreground mt-2 text-sm line-clamp-2">{recipe.description}</p>
+                                )}
+                              </CardHeader>
+                              <CardContent className="space-y-4 py-2">
+                                {/* Simplified View for Card */}
+                                <div className="flex gap-2">
+                                  <Badge variant="outline" className="text-xs">
+                                    {recipe.ingredients.user_provided.length + recipe.ingredients.additional_needed.length} Ingredients
+                                  </Badge>
                                   {recipe.health_tip && (
-                                    <Card className="bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800">
-                                      <CardHeader className="pb-2">
-                                        <CardTitle className="text-sm flex items-center gap-2">
-                                          <Heart className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                                          Health Tip
-                                        </CardTitle>
-                                      </CardHeader>
-                                      <CardContent>
-                                        <p className="text-sm text-blue-900 dark:text-blue-100">
-                                          {recipe.health_tip}
-                                        </p>
-                                      </CardContent>
-                                    </Card>
+                                    <Badge variant="secondary" className="text-xs bg-blue-50 text-blue-700">Health Tip Included</Badge>
                                   )}
+                                </div>
 
-                                  <div className="flex gap-3 pt-2">
-                                    <Button className="bg-gradient-hero">View Full Recipe</Button>
-                                    <Button 
-                                      variant={isSaved ? "default" : "outline"}
-                                      onClick={() => {
-                                        // Convert API recipe to saved recipe format
-                                        const savedRecipe: Recipe = {
-                                          id: recipeId,
-                                          title: recipe.recipe_name,
-                                          image: "/placeholder.svg",
-                                          prepTime: recipe.cooking_time,
-                                          calories: "",
-                                          missingIngredients: recipe.ingredients.additional_needed,
-                                        };
-                                        saveRecipe(savedRecipe);
-                                      }}
+                                <div className="flex flex-col gap-2 pt-2">
+                                  {/* Note: We would need a "View Details" to see full instructions if we compacted this. 
+                                        For now, keeping previous simple actions but maybe we should add a dialog for details like the 'My Recipes' tab has? 
+                                        Let's keep it simple for this refactor and just show buttons.
+                                    */}
+                                  <Button
+                                    className="w-full bg-gradient-hero mb-2"
+                                    size="sm"
+                                    onClick={() => {
+                                      // Construct a UserRecipe-like object for the modal
+                                      const modalRecipe = {
+                                        id: recipeId,
+                                        image: "",
+                                        recipeName: recipe.recipe_name,
+                                        description: recipe.description,
+                                        ingredients: {
+                                          providedIngredient: recipe.ingredients.user_provided,
+                                          additionalIngredient: recipe.ingredients.additional_needed
+                                        },
+                                        instructions: recipe.instructions.replace(/\.\s/g, '.').split('.'),
+                                        cookingTime: recipe.cooking_time,
+                                        healthTip: recipe.health_tip,
+                                        difficulty: recipe.difficulty
+                                      };
+                                      setSelectedRecipe(modalRecipe as unknown as UserRecipe);
+                                    }}
+                                  >
+                                    View Full Recipe
+                                  </Button>
+                                  <div className="flex gap-2">
+                                    <Button
+                                      variant={isSaved ? "secondary" : "outline"}
+                                      size="sm"
+                                      onClick={() => saveRecipe({
+                                        id: recipeId,
+                                        title: recipe.recipe_name,
+                                        image: "/placeholder.svg",
+                                        prepTime: recipe.cooking_time,
+                                        calories: "",
+                                        missingIngredients: recipe.ingredients.additional_needed
+                                      })}
+                                      className="flex-1"
+                                      disabled={isSaved}
                                     >
                                       {isSaved ? (
                                         <>
@@ -723,134 +813,330 @@ const Dashboard = () => {
                                         </>
                                       )}
                                     </Button>
+                                    <Button
+                                      className="flex-1"
+                                      variant="secondary"
+                                      size="sm"
+                                      onClick={() => addToGroceryList({
+                                        have: recipe.ingredients.user_provided,
+                                        need: recipe.ingredients.additional_needed
+                                      }, recipe.recipe_name)}
+                                    >
+                                      <ShoppingCart className="w-4 h-4 mr-2" />
+                                      List
+                                    </Button>
                                   </div>
-                                </CardContent>
-                              </div>
+                                </div>
+                              </CardContent>
                             </div>
-                          </Card>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </TabsContent>
+                          </div>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </TabsContent>
 
-            <TabsContent value="saved" className="space-y-6">
-              <div>
-                <h1 className="text-4xl font-bold mb-2">Recipe Journal</h1>
-                <p className="text-muted-foreground text-lg">
-                  Your saved recipes and favorites
-                </p>
-              </div>
-
-              {savedRecipes.length === 0 ? (
-                <Card className="p-12 text-center">
-                  <BookmarkPlus className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-                  <h3 className="text-xl font-semibold mb-2">No saved recipes yet</h3>
-                  <p className="text-muted-foreground mb-4">
-                    Start searching for recipes and save your favorites!
+              <TabsContent value="saved" className="space-y-6">
+                {/* Reusing existing logic for Saved Recipes */}
+                <div>
+                  <h2 className="text-2xl font-bold mb-2">My Cookbook</h2>
+                  <p className="text-muted-foreground">
+                    Recipes you have saved for later.
                   </p>
-                  <Button onClick={() => setActiveTab("search")} className="bg-gradient-hero">
-                    <Search className="w-4 h-4 mr-2" />
-                    Find Recipes
-                  </Button>
-                </Card>
-              ) : (
-                <div className="grid gap-6">
-                  {savedRecipes.map((recipe) => (
-                    <Card key={recipe.id} className="overflow-hidden hover:shadow-cookify-md transition-shadow">
-                      <div className="md:flex">
+                </div>
+
+                {isLoadingUserRecipes ? (
+                  <Card className="p-12 text-center">
+                    <div className="w-8 h-8 mx-auto mb-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    <p className="text-muted-foreground">Loading your recipes...</p>
+                  </Card>
+                ) : userRecipes.length === 0 ? (
+                  <Card className="p-12 text-center">
+                    <BookmarkPlus className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+                    <h3 className="text-xl font-semibold mb-2">No recipes saved yet</h3>
+                    <p className="text-muted-foreground mb-4">
+                      When you find a recipe you love, save it here!
+                    </p>
+                  </Card>
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {userRecipes.map((recipe) => (
+                      <Card key={recipe.id} className="overflow-hidden hover:shadow-lg transition-shadow border flex flex-col h-full">
                         <img
-                          src={recipe.image}
-                          alt={recipe.title}
-                          className="w-full md:w-64 h-64 object-cover"
+                          src={recipe.image || "/placeholder.svg"}
+                          alt={recipe.recipeName}
+                          className="w-full h-40 object-cover bg-muted"
                         />
-                        <div className="flex-1">
-                          <CardHeader>
-                            <CardTitle className="text-2xl">{recipe.title}</CardTitle>
-                            <div className="flex gap-4 text-sm text-muted-foreground">
-                              <span>⏱️ {recipe.prepTime}</span>
-                              <span>🔥 {recipe.calories}</span>
-                            </div>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="flex gap-3">
-                              <Button className="bg-gradient-hero">View Recipe</Button>
-                              <Button 
-                                variant="destructive"
-                                onClick={() => saveRecipe(recipe)}
-                              >
-                                <X className="w-4 h-4 mr-2" />
-                                Remove
-                              </Button>
-                            </div>
-                          </CardContent>
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
+                        <CardHeader className="pb-3 p-4">
+                          <CardTitle className="text-lg line-clamp-1">{recipe.recipeName}</CardTitle>
+                          <div className="flex gap-3 text-xs text-muted-foreground mt-1">
+                            <span>⏱️ {recipe.cookingTime}</span>
+                            <span>📊 {recipe.difficulty}</span>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="p-4 pt-0 mt-auto">
+                          <div className="space-y-2">
+                            <Button
+                              className="w-full bg-gradient-hero"
+                              size="sm"
+                              onClick={() => setSelectedRecipe(recipe)}
+                            >
+                              View Full Recipe
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full"
+                              onClick={() => addToGroceryList({
+                                have: recipe.ingredients.providedIngredient,
+                                need: recipe.ingredients.additionalIngredient
+                              }, recipe.recipeName)}
+                            >
+                              <ShoppingCart className="w-4 h-4 mr-2" />
+                              Add to Grocery List
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
 
-            <TabsContent value="grocery" className="space-y-6">
-              <div>
-                <h1 className="text-4xl font-bold mb-2">Smart Grocery List</h1>
-                <p className="text-muted-foreground text-lg">
-                  Missing ingredients from your recipe searches
-                </p>
-              </div>
+                {/* Dialog for Saved Recipes is reused from original code, assuming it's outside this block or I need to include it. 
+                     Wait, the Dialog was inside TabsContent in the original. I should include it here.
+                 */}
 
-              {groceryList.length === 0 ? (
-                <Card className="p-12 text-center">
-                  <ShoppingCart className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-                  <h3 className="text-xl font-semibold mb-2">No items yet</h3>
-                  <p className="text-muted-foreground mb-4">
-                    Search for recipes to generate your grocery list automatically
+              </TabsContent>
+
+              <TabsContent value="grocery" className="space-y-6">
+                <div>
+                  <h1 className="text-4xl font-bold mb-2">My Grocery List</h1>
+                  <p className="text-muted-foreground text-lg">
+                    Manage your shopping list
                   </p>
-                  <Button onClick={() => setActiveTab("search")} className="bg-gradient-hero">
-                    <Search className="w-4 h-4 mr-2" />
-                    Find Recipes
-                  </Button>
-                </Card>
-              ) : (
-                <Card className="shadow-cookify-md">
-                  <CardHeader>
+                </div>
+
+                <Card className="shadow-lg border-2">
+                  <CardHeader className="pb-4">
                     <div className="flex items-center justify-between">
-                      <CardTitle>Your Grocery List</CardTitle>
-                      <Button variant="outline" size="sm" onClick={copyGroceryList}>
-                        <Copy className="w-4 h-4 mr-2" />
-                        Copy List
+                      <CardTitle>Shopping List</CardTitle>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={copyGroceryList} disabled={groceryList.length === 0}>
+                          <Copy className="w-4 h-4 mr-2" /> Copy
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={clearGroceryList} disabled={groceryList.length === 0} className="text-destructive hover:text-destructive">
+                          <X className="w-4 h-4 mr-2" /> Clear
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    {/* Manual Add */}
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Add item (e.g. Milk, Bread)..."
+                        value={manualGroceryInput}
+                        onChange={(e) => setManualGroceryInput(e.target.value)}
+                        onKeyPress={(e) => e.key === "Enter" && addManualGroceryItem()}
+                      />
+                      <Button onClick={addManualGroceryItem} className="bg-gradient-hero">
+                        <Plus className="w-4 h-4" />
                       </Button>
                     </div>
-                    <CardDescription>
-                      {groceryList.length} item{groceryList.length !== 1 ? "s" : ""} to buy
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-3">
-                      {groceryList.map((item, index) => (
-                        <li key={index} className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-                          <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-medium">
-                            {index + 1}
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-medium">{item}</p>
-                            {getSubstitutions(item) && (
-                              <p className="text-sm text-muted-foreground mt-1">
-                                Alternatives: {getSubstitutions(item)?.substitutes.slice(0, 2).join(", ")}
-                              </p>
-                            )}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
+
+                    {groceryList.length === 0 ? (
+                      <div className="text-center py-12 bg-muted/20 rounded-xl border-2 border-dashed">
+                        <ShoppingCart className="w-12 h-12 mx-auto mb-3 text-muted-foreground" />
+                        <p className="text-muted-foreground">Your list is empty.</p>
+                        <p className="text-sm text-muted-foreground mt-1">Add items manually or from recipe results.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-6">
+                        <Accordion type="multiple" className="w-full">
+                          {Object.entries(groceryList.reduce((acc, item) => {
+                            const source = item.source || "Other";
+                            if (!acc[source]) acc[source] = [];
+                            acc[source].push(item);
+                            return acc;
+                          }, {} as Record<string, GroceryItem[]>)).map(([source, items]) => (
+                            <AccordionItem value={source} key={source}>
+                              <AccordionTrigger className="hover:no-underline">
+                                <div className="flex items-center gap-2">
+                                  {source === "Manual Items" ? <Plus className="w-4 h-4" /> : <ChefHat className="w-4 h-4" />}
+                                  <span>{source}</span>
+                                  <Badge variant="secondary" className="ml-2 text-xs">{items.length}</Badge>
+                                </div>
+                              </AccordionTrigger>
+                              <AccordionContent>
+                                <div className="space-y-2 pt-2 px-1">
+                                  {items.map((item) => (
+                                    <div key={item.id} className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${item.checked ? 'bg-muted/50 border-transparent' : 'bg-card border-border hover:border-primary/50'}`}>
+                                      <Checkbox
+                                        checked={item.checked}
+                                        onCheckedChange={() => toggleGroceryItem(item.id)}
+                                        id={`item-${item.id}`}
+                                      />
+                                      <div className="flex-1">
+                                        <Label htmlFor={`item-${item.id}`} className={`text-base cursor-pointer ${item.checked ? 'line-through text-muted-foreground' : ''}`}>
+                                          {item.name}
+                                        </Label>
+                                        {/* Show category badge if it's from a recipe */}
+                                        {item.category && item.category !== 'manual' && (
+                                          <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-full uppercase tracking-wider font-medium ${item.category === 'have' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                                            }`}>
+                                            {item.category === 'have' ? 'Have' : 'Need'}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removeGroceryItem(item.id)}>
+                                        <X className="w-4 h-4" />
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </AccordionContent>
+                            </AccordionItem>
+                          ))}
+                        </Accordion>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
+              </TabsContent>
+            </Tabs>
+            <Dialog open={!!selectedRecipe} onOpenChange={(open) => !open && setSelectedRecipe(null)}>
+              {selectedRecipe && (
+                <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
+                  <DialogHeader className="p-6 pb-4 border-b bg-background sticky top-0 z-10 shrink-0">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <DialogTitle className="text-3xl font-bold bg-gradient-hero bg-clip-text text-transparent mb-2">
+                          {selectedRecipe.recipeName}
+                        </DialogTitle>
+                        <DialogDescription className="flex items-center gap-4 text-sm mt-1">
+                          <span className="flex items-center gap-1.5 bg-secondary/50 px-2.5 py-1 rounded-full text-secondary-foreground font-medium">
+                            ⏱️ {selectedRecipe.cookingTime}
+                          </span>
+                          <span className="flex items-center gap-1.5 bg-secondary/50 px-2.5 py-1 rounded-full text-secondary-foreground font-medium">
+                            📊 {selectedRecipe.difficulty}
+                          </span>
+                        </DialogDescription>
+                      </div>
+                    </div>
+                  </DialogHeader>
+
+                  <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                    {/* Description */}
+                    <div className="prose prose-sm max-w-none text-muted-foreground text-lg leading-relaxed">
+                      {selectedRecipe.description}
+                    </div>
+
+                    {/* Ingredients Grid */}
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <div className="bg-green-50/50 dark:bg-green-950/10 p-5 rounded-xl border border-green-100 dark:border-green-900/20">
+                        <h3 className="font-semibold mb-4 flex items-center gap-2 text-green-700 dark:text-green-400">
+                          <div className="p-1.5 rounded-lg bg-green-100 dark:bg-green-900/30">
+                            <BookmarkCheck className="w-4 h-4" />
+                          </div>
+                          Have Ingredients
+                        </h3>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedRecipe.ingredients.providedIngredient.map((item, i) => (
+                            <Badge key={i} variant="secondary" className="bg-white dark:bg-green-950/30 text-green-700 dark:text-green-400 hover:bg-green-50 border-green-200">
+                              {item}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-amber-50/50 dark:bg-amber-950/10 p-5 rounded-xl border border-amber-100 dark:border-amber-900/20">
+                        <h3 className="font-semibold mb-4 flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                          <div className="p-1.5 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+                            <ShoppingCart className="w-4 h-4" />
+                          </div>
+                          Missing Ingredients
+                        </h3>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedRecipe.ingredients.additionalIngredient.map((item, i) => (
+                            <Badge key={i} variant="secondary" className="bg-white dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 hover:bg-amber-50 border-amber-200">
+                              {item}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Instructions */}
+                    <div>
+                      <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                        <span className="p-1.5 rounded-lg bg-primary/10 text-primary">
+                          <ChefHat className="w-5 h-5" />
+                        </span>
+                        Instructions
+                      </h3>
+                      <div className="pl-2">
+                        <ul className="space-y-4 list-none">
+                          {(Array.isArray(selectedRecipe.instructions)
+                            ? selectedRecipe.instructions.flatMap(step => step.split('.'))
+                            : (selectedRecipe.instructions as unknown as string)
+                              .split('.')
+                          ).filter(step => step.trim().length > 0)
+                            .map((step, i) => (
+                              <li key={i} className="flex gap-4 text-muted-foreground leading-relaxed group">
+                                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center text-xs font-bold mt-0.5 group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                                  {i + 1}
+                                </span>
+                                <span>{step}</span>
+                              </li>
+                            ))}
+                        </ul>
+                      </div>
+                    </div>
+
+                    {/* Health Tip */}
+                    {selectedRecipe.healthTip && (
+                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 p-5 rounded-xl border border-blue-100 dark:border-blue-900/20">
+                        <div className="flex gap-4">
+                          <div className="p-2 rounded-full bg-blue-100 dark:bg-blue-900/30 h-fit">
+                            <Heart className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-blue-700 dark:text-blue-400 mb-1">Health Tip</h4>
+                            <p className="text-sm text-blue-600/90 dark:text-blue-300 leading-relaxed">
+                              {selectedRecipe.healthTip}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Footer Actions */}
+                  <div className="p-6 border-t bg-background mt-auto sticky bottom-0 z-10 shrink-0 gap-3 flex">
+                    <Button
+                      className="flex-1 bg-gradient-hero shadow-md hover:shadow-lg transition-all"
+                      size="lg"
+                      onClick={() => addToGroceryList({
+                        have: selectedRecipe.ingredients.providedIngredient,
+                        need: selectedRecipe.ingredients.additionalIngredient
+                      }, selectedRecipe.recipeName)}
+                    >
+                      <ShoppingCart className="w-5 h-5 mr-2" />
+                      Add to Grocery List
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="lg"
+                      onClick={() => setSelectedRecipe(null)}
+                    >
+                      Close
+                    </Button>
+                  </div>
+                </DialogContent>
               )}
-            </TabsContent>
-          </Tabs>
+            </Dialog>
+          </div>
         </div>
       </div>
     </div>
