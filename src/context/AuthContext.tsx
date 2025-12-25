@@ -20,7 +20,7 @@ interface User {
     email: string;
     firstName: string;
     lastName: string;
-    userProfile: UserProfileResponse;
+    userProfile: UserProfileResponse | null;
 }
 
 interface AuthContextType {
@@ -29,6 +29,7 @@ interface AuthContextType {
     login: (token: string) => void;
     logout: () => void;
     isLoading: boolean;
+    refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -64,6 +65,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
     };
 
+    const refreshProfile = async () => {
+        const token = localStorage.getItem("token");
+        if (token && token !== "undefined" && token !== "null" && token.trim() !== "") {
+            await fetchProfile(token);
+        }
+    };
+
     useEffect(() => {
         // Check for token on mount
         const token = localStorage.getItem("token");
@@ -91,7 +99,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ isAuthenticated, user, login, logout, isLoading }}>
+        <AuthContext.Provider value={{ isAuthenticated, user, login, logout, isLoading, refreshProfile }}>
             {children}
         </AuthContext.Provider>
     );

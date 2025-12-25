@@ -8,7 +8,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChefHat } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { toast } from "@/hooks/use-toast";
+
 import { useAuth } from "@/context/AuthContext";
+import { GoogleLogin } from "@react-oauth/google";
 
 const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -86,6 +88,30 @@ const Auth = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleGoogleSuccess = async (credentialResponse: any) => {
+    console.log("Google Auth Success:", credentialResponse);
+    // TODO: Send credentialResponse.credential to backend
+    // const response = await fetch("https://localhost:5001/api/auth/google", {
+    //   method: "POST",
+    //   headers: { "Content-Type": "application/json" },
+    //   body: JSON.stringify({ idToken: credentialResponse.credential }),
+    // });
+    toast({
+      title: "Google Auth",
+      description: "Google Sign-In successful (Backend integration pending)",
+      variant: "default",
+    });
+  };
+
+  const handleGoogleError = () => {
+    console.log("Google Auth Failed");
+    toast({
+      title: "Error",
+      description: "Google Sign-In failed",
+      variant: "destructive",
+    });
   };
 
   return (
@@ -169,7 +195,26 @@ const Auth = () => {
                     disabled={isLoading}
                   >
                     {isLoading ? "Creating Account..." : "Create Account"}
+
                   </Button>
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-background px-2 text-muted-foreground">
+                        Or continue with
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex justify-center w-full">
+                    <GoogleLogin
+                      onSuccess={handleGoogleSuccess}
+                      onError={handleGoogleError}
+                      theme="outline"
+                      width="100%"
+                    />
+                  </div>
                   <p className="text-xs text-center text-muted-foreground">
                     By signing up, you agree to our Terms of Service and Privacy Policy
                   </p>
@@ -222,12 +267,31 @@ const Auth = () => {
                   <a href="#" className="text-sm text-center text-primary hover:underline">
                     Forgot your password?
                   </a>
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-background px-2 text-muted-foreground">
+                        Or continue with
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex justify-center w-full">
+                    <GoogleLogin
+                      onSuccess={handleGoogleSuccess}
+                      onError={handleGoogleError}
+                      theme="outline"
+                      width="100%"
+                    />
+                  </div>
                 </CardFooter>
               </form>
             </Card>
           </TabsContent>
         </Tabs>
       </div>
+
     </div>
   );
 };

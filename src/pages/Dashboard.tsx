@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 import { Badge } from "@/components/ui/badge";
-import { ChefHat, Plus, Search, X, ShoppingCart, BookmarkPlus, BookmarkCheck, Lightbulb, Copy, UtensilsCrossed, Heart, Leaf, Check } from "lucide-react";
+import { ChefHat, Plus, Search, X, ShoppingCart, BookmarkPlus, BookmarkCheck, Lightbulb, Copy, UtensilsCrossed, Heart, Leaf, Check, Lock } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
 import Navbar from "@/components/Navbar";
+import { useAuth } from "@/context/AuthContext";
 
 // Ingredient substitutions database
 const ingredientSubstitutions: Record<string, string[]> = {
@@ -44,25 +45,26 @@ type Recipe = {
 };
 
 // API Recipe Types
+// API Recipe Types
 type ApiRecipeIngredients = {
-  user_provided: string[];
-  additional_needed: string[];
+  providedIngredient: string[];
+  additionalIngredient: string[];
 };
 
 type ApiRecipe = {
-  id?: string;
-  recipe_name: string;
+  id: string;
+  image?: string;
+  recipeName: string;
   description: string;
   ingredients: ApiRecipeIngredients;
-  instructions: string;
-  cooking_time: string;
+  instructions: string[];
+  cookingTime: string;
   difficulty: string;
-  health_tip: string;
+  healthTip?: string;
 };
 
-type ApiResponse = {
-  suggested_recipes: ApiRecipe[];
-};
+// Response is now a list of these objects
+type ApiResponse = ApiRecipe[];
 
 // User Recipes Types
 type UserRecipeIngredients = {
@@ -131,6 +133,17 @@ type ApiGroceryListResponse = {
 const Dashboard = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { user, isLoading } = useAuth();
+
+  useEffect(() => {
+    if (!isLoading && user && !user.userProfile) {
+      navigate("/complete-profile");
+    }
+  }, [user, isLoading, navigate]);
+
+  // Typo in backend response 'suscriptionPlan' is known
+  const isFreePlan = !user?.userProfile?.suscriptionPlan || user?.userProfile?.suscriptionPlan === "Free Trial";
+
   const [ingredients, setIngredients] = useState<string[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [dietaryRestrictions, setDietaryRestrictions] = useState<string[]>([]);
@@ -152,6 +165,15 @@ const Dashboard = () => {
   const [userRecipes, setUserRecipes] = useState<UserRecipe[]>([]);
   const [isLoadingUserRecipes, setIsLoadingUserRecipes] = useState(false);
   const [selectedRecipe, setSelectedRecipe] = useState<UserRecipe | null>(null);
+
+  // Pagination State for My Recipes
+  const [userRecipesPage, setUserRecipesPage] = useState(1);
+  const [userRecipesMeta, setUserRecipesMeta] = useState({
+    totalPages: 1,
+    hasPrevious: false,
+    hasNext: false,
+    totalCount: 0
+  });
 
   const [apiGroceryList, setApiGroceryList] = useState<ApiGroceryRecipeGroup[]>([]);
   const [isLoadingGroceryList, setIsLoadingGroceryList] = useState(false);
@@ -177,7 +199,7 @@ const Dashboard = () => {
   }, [groceryList]);
 
   // Fetch user recipes from API
-  const fetchUserRecipes = useCallback(async () => {
+  const fetchUserRecipes = useCallback(async (page: number = 1) => {
     setIsLoadingUserRecipes(true);
     try {
       const token = localStorage.getItem("token");
@@ -193,7 +215,7 @@ const Dashboard = () => {
       }
 
       const params = new URLSearchParams({
-        PageNumber: "1",
+        PageNumber: page.toString(),
         PageSize: "5",
       });
 
@@ -224,6 +246,13 @@ const Dashboard = () => {
 
       const data: UserRecipesResponse = await response.json();
       setUserRecipes(data.items || []);
+      setUserRecipesMeta({
+        totalPages: data.totalPages,
+        hasPrevious: data.hasPrevious,
+        hasNext: data.hasNext,
+        totalCount: data.totalCount
+      });
+      setUserRecipesPage(data.page); // Sync state with API response
     } catch (error) {
       console.error("Error fetching user recipes:", error);
       toast({
@@ -236,12 +265,25 @@ const Dashboard = () => {
     }
   }, [toast, navigate]);
 
-  // Fetch user recipes when saved tab is active
+  // Fetch user recipes when saved tab is active or page changes
   useEffect(() => {
     if (activeTab === "saved") {
-      fetchUserRecipes();
+      fetchUserRecipes(userRecipesPage);
     }
-  }, [activeTab, fetchUserRecipes]);
+  }, [activeTab, userRecipesPage, fetchUserRecipes]);
+
+  // Handlers for pagination
+  const handleNextPage = () => {
+    if (userRecipesMeta.hasNext) {
+      setUserRecipesPage(prev => prev + 1);
+    }
+  };
+
+  const handlePrevPage = () => {
+    if (userRecipesMeta.hasPrevious) {
+      setUserRecipesPage(prev => Math.max(1, prev - 1));
+    }
+  };
 
   // Fetch grocery list from API
   const fetchGroceryList = useCallback(async () => {
@@ -424,14 +466,12 @@ const Dashboard = () => {
       }
 
       const data: ApiResponse = await response.json();
-      setApiRecipes(data.suggested_recipes || []);
-
-
-
+      // The API now returns the list directly
+      setApiRecipes(data || []);
 
       toast({
         title: "Success",
-        description: `Found ${data.suggested_recipes?.length || 0} recipe(s)`,
+        description: `Found ${data?.length || 0} recipe(s)`,
         variant: "default",
       });
     } catch (error) {
@@ -751,18 +791,28 @@ const Dashboard = () => {
 
                     {/* Health */}
                     <AccordionItem value="health">
-                      <AccordionTrigger>Health Conditions</AccordionTrigger>
+                      <AccordionTrigger className="flex gap-2">
+                        Health Conditions
+                        {isFreePlan && <Lock className="w-3 h-3 text-muted-foreground" />}
+                      </AccordionTrigger>
                       <AccordionContent>
                         <div className="space-y-2 pt-2 px-1">
                           <div className="flex gap-2">
                             <Input
-                              placeholder="e.g. peanut allergy"
+                              placeholder={isFreePlan ? "Upgrade to Pro to use this filter" : "e.g. peanut allergy"}
                               value={healthInputValue}
                               onChange={(e) => setHealthInputValue(e.target.value)}
                               onKeyPress={(e) => e.key === "Enter" && addHealthRestriction()}
                               className="h-9"
+                              disabled={isFreePlan}
                             />
-                            <Button onClick={addHealthRestriction} variant="outline" size="icon" className="h-9 shrink-0">
+                            <Button
+                              onClick={addHealthRestriction}
+                              variant="outline"
+                              size="icon"
+                              className="h-9 shrink-0"
+                              disabled={isFreePlan}
+                            >
                               <Plus className="w-4 h-4" />
                             </Button>
                           </div>
@@ -782,18 +832,28 @@ const Dashboard = () => {
 
                     {/* Lifestyle */}
                     <AccordionItem value="lifestyle">
-                      <AccordionTrigger>Lifestyle Goals</AccordionTrigger>
+                      <AccordionTrigger className="flex gap-2">
+                        Lifestyle Goals
+                        {isFreePlan && <Lock className="w-3 h-3 text-muted-foreground" />}
+                      </AccordionTrigger>
                       <AccordionContent>
                         <div className="space-y-2 pt-2 px-1">
                           <div className="flex gap-2">
                             <Input
-                              placeholder="e.g. keto"
+                              placeholder={isFreePlan ? "Upgrade to Pro to use this filter" : "e.g. keto"}
                               value={lifestyleInputValue}
                               onChange={(e) => setLifestyleInputValue(e.target.value)}
                               onKeyPress={(e) => e.key === "Enter" && addLifestyle()}
                               className="h-9"
+                              disabled={isFreePlan}
                             />
-                            <Button onClick={addLifestyle} variant="outline" size="icon" className="h-9 shrink-0">
+                            <Button
+                              onClick={addLifestyle}
+                              variant="outline"
+                              size="icon"
+                              className="h-9 shrink-0"
+                              disabled={isFreePlan}
+                            >
                               <Plus className="w-4 h-4" />
                             </Button>
                           </div>
@@ -884,21 +944,21 @@ const Dashboard = () => {
                 ) : (
                   <div className="grid gap-6">
                     {apiRecipes.map((recipe, index) => {
-                      const recipeId = `recipe-${index}`;
+                      const recipeId = recipe.id || `recipe-${index}`;
                       const isSaved = isRecipeSaved(recipeId);
                       return (
                         <Card key={index} className="overflow-hidden hover:shadow-lg transition-shadow border-2">
                           <div className="md:flex">
                             <img
-                              src="/placeholder.svg"
-                              alt={recipe.recipe_name}
+                              src={recipe.image || "/placeholder.svg"}
+                              alt={recipe.recipeName}
                               className="w-full md:w-56 h-56 object-cover bg-muted"
                             />
                             <div className="flex-1 p-2">
                               <CardHeader className="py-3">
-                                <CardTitle className="text-xl">{recipe.recipe_name}</CardTitle>
+                                <CardTitle className="text-xl">{recipe.recipeName}</CardTitle>
                                 <div className="flex gap-4 text-sm text-muted-foreground mt-1">
-                                  <span>⏱️ {recipe.cooking_time}</span>
+                                  <span>⏱️ {recipe.cookingTime}</span>
                                   <span>📊 {recipe.difficulty}</span>
                                 </div>
                                 {recipe.description && (
@@ -909,9 +969,9 @@ const Dashboard = () => {
                                 {/* Simplified View for Card */}
                                 <div className="flex gap-2">
                                   <Badge variant="outline" className="text-xs">
-                                    {recipe.ingredients.user_provided.length + recipe.ingredients.additional_needed.length} Ingredients
+                                    {recipe.ingredients.providedIngredient.length + recipe.ingredients.additionalIngredient.length} Ingredients
                                   </Badge>
-                                  {recipe.health_tip && (
+                                  {recipe.healthTip && (
                                     <Badge variant="secondary" className="text-xs bg-blue-50 text-blue-700">Health Tip Included</Badge>
                                   )}
                                 </div>
@@ -928,16 +988,17 @@ const Dashboard = () => {
                                       // Construct a UserRecipe-like object for the modal
                                       const modalRecipe = {
                                         id: recipeId,
-                                        image: "",
-                                        recipeName: recipe.recipe_name,
+                                        image: recipe.image || "",
+                                        recipeName: recipe.recipeName,
                                         description: recipe.description,
                                         ingredients: {
-                                          providedIngredient: recipe.ingredients.user_provided,
-                                          additionalIngredient: recipe.ingredients.additional_needed
+                                          providedIngredient: recipe.ingredients.providedIngredient,
+                                          additionalIngredient: recipe.ingredients.additionalIngredient
                                         },
-                                        instructions: recipe.instructions.replace(/\.\s/g, '.').split('.'),
-                                        cookingTime: recipe.cooking_time,
-                                        healthTip: recipe.health_tip,
+                                        // Instructions are now string[] in API, same as UserRecipe structure
+                                        instructions: recipe.instructions,
+                                        cookingTime: recipe.cookingTime,
+                                        healthTip: recipe.healthTip || "",
                                         difficulty: recipe.difficulty
                                       };
                                       setSelectedRecipe(modalRecipe as unknown as UserRecipe);
@@ -951,11 +1012,11 @@ const Dashboard = () => {
                                       size="sm"
                                       onClick={() => saveRecipe({
                                         id: recipeId,
-                                        title: recipe.recipe_name,
-                                        image: "/placeholder.svg",
-                                        prepTime: recipe.cooking_time,
+                                        title: recipe.recipeName,
+                                        image: recipe.image || "/placeholder.svg",
+                                        prepTime: recipe.cookingTime,
                                         calories: "",
-                                        missingIngredients: recipe.ingredients.additional_needed
+                                        missingIngredients: recipe.ingredients.additionalIngredient
                                       })}
                                       className="flex-1"
                                       disabled={isSaved}
@@ -977,9 +1038,9 @@ const Dashboard = () => {
                                       variant="secondary"
                                       size="sm"
                                       onClick={() => addToGroceryList({
-                                        have: recipe.ingredients.user_provided,
-                                        need: recipe.ingredients.additional_needed
-                                      }, recipe.recipe_name, recipeId)}
+                                        have: recipe.ingredients.providedIngredient,
+                                        need: recipe.ingredients.additionalIngredient
+                                      }, recipe.recipeName, recipeId)}
                                     >
                                       <ShoppingCart className="w-4 h-4 mr-2" />
                                       List
@@ -1019,46 +1080,71 @@ const Dashboard = () => {
                     </p>
                   </Card>
                 ) : (
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {userRecipes.map((recipe) => (
-                      <Card key={recipe.id} className="overflow-hidden hover:shadow-lg transition-shadow border flex flex-col h-full">
-                        <img
-                          src={recipe.image || "/placeholder.svg"}
-                          alt={recipe.recipeName}
-                          className="w-full h-40 object-cover bg-muted"
-                        />
-                        <CardHeader className="pb-3 p-4">
-                          <CardTitle className="text-lg line-clamp-1">{recipe.recipeName}</CardTitle>
-                          <div className="flex gap-3 text-xs text-muted-foreground mt-1">
-                            <span>⏱️ {recipe.cookingTime}</span>
-                            <span>📊 {recipe.difficulty}</span>
-                          </div>
-                        </CardHeader>
-                        <CardContent className="p-4 pt-0 mt-auto">
-                          <div className="space-y-2">
-                            <Button
-                              className="w-full bg-gradient-hero"
-                              size="sm"
-                              onClick={() => setSelectedRecipe(recipe)}
-                            >
-                              View Full Recipe
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="w-full"
-                              onClick={() => addToGroceryList({
-                                have: recipe.ingredients.providedIngredient,
-                                need: recipe.ingredients.additionalIngredient
-                              }, recipe.recipeName, recipe.id)}
-                            >
-                              <ShoppingCart className="w-4 h-4 mr-2" />
-                              Add to Grocery List
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                  <div className="space-y-6">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {userRecipes.map((recipe) => (
+                        <Card key={recipe.id} className="overflow-hidden hover:shadow-lg transition-shadow border flex flex-col h-full">
+                          <img
+                            src={recipe.image || "/placeholder.svg"}
+                            alt={recipe.recipeName}
+                            className="w-full h-40 object-cover bg-muted"
+                          />
+                          <CardHeader className="pb-3 p-4">
+                            <CardTitle className="text-lg line-clamp-1">{recipe.recipeName}</CardTitle>
+                            <div className="flex gap-3 text-xs text-muted-foreground mt-1">
+                              <span>⏱️ {recipe.cookingTime}</span>
+                              <span>📊 {recipe.difficulty}</span>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="p-4 pt-0 mt-auto">
+                            <div className="space-y-2">
+                              <Button
+                                className="w-full bg-gradient-hero"
+                                size="sm"
+                                onClick={() => setSelectedRecipe(recipe)}
+                              >
+                                View Full Recipe
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full"
+                                onClick={() => addToGroceryList({
+                                  have: recipe.ingredients.providedIngredient,
+                                  need: recipe.ingredients.additionalIngredient
+                                }, recipe.recipeName, recipe.id)}
+                              >
+                                <ShoppingCart className="w-4 h-4 mr-2" />
+                                Add to Grocery List
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+
+                    {/* Pagination Controls */}
+                    {userRecipesMeta.totalPages > 1 && (
+                      <div className="flex items-center justify-center gap-4 mt-6">
+                        <Button
+                          variant="outline"
+                          onClick={handlePrevPage}
+                          disabled={!userRecipesMeta.hasPrevious || isLoadingUserRecipes}
+                        >
+                          Previous
+                        </Button>
+                        <span className="text-sm text-muted-foreground">
+                          Page {userRecipesPage} of {userRecipesMeta.totalPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          onClick={handleNextPage}
+                          disabled={!userRecipesMeta.hasNext || isLoadingUserRecipes}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
 

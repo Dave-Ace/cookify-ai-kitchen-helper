@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -10,9 +12,12 @@ import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/context/AuthContext";
 import Navbar from "@/components/Navbar";
 
+
 const Profile = () => {
-    const { user, logout } = useAuth();
+    const { user, logout, refreshProfile } = useAuth();
     const navigate = useNavigate();
+    const { toast } = useToast();
+    const [isUpgradeDialogOpen, setIsUpgradeDialogOpen] = useState(false);
 
     const handleLogout = () => {
         logout();
@@ -32,13 +37,18 @@ const Profile = () => {
 
                     <Card className="border-2 shadow-lg">
                         <CardHeader className="text-center pb-2">
-                            <div className="w-24 h-24 mx-auto mb-4 bg-primary/10 rounded-full flex items-center justify-center">
+                            <div className="w-24 h-24 mx-auto mb-4 bg-primary/10 rounded-full flex items-center justify-center relative">
                                 <Avatar className="w-24 h-24">
                                     <AvatarImage src={user?.userProfile?.image || ""} />
                                     <AvatarFallback className="text-3xl bg-gradient-hero text-transparent bg-clip-text font-bold">
                                         {user ? `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase() : "U"}
                                     </AvatarFallback>
                                 </Avatar>
+                                {user?.userProfile?.suscriptionPlan === "Pro" && (
+                                    <span className="absolute -bottom-1 -right-1 bg-gradient-hero text-white text-xs font-bold px-2 py-1 rounded-full shadow-md border-2 border-background">
+                                        PRO
+                                    </span>
+                                )}
                             </div>
                             <CardTitle className="text-3xl font-bold bg-gradient-hero bg-clip-text text-transparent">
                                 {user ? `${user.firstName} ${user.lastName}` : "Chef"}
@@ -109,12 +119,51 @@ const Profile = () => {
                                             <p className="text-sm text-muted-foreground">1 prompt/week</p>
                                         </div>
                                     </div>
-                                    <Dialog>
+                                    <Dialog open={isUpgradeDialogOpen} onOpenChange={setIsUpgradeDialogOpen}>
                                         <DialogTrigger asChild>
                                             <Button variant="outline" size="sm">Upgrade</Button>
                                         </DialogTrigger>
                                         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto w-full">
-                                            <Pricing />
+                                            <Pricing
+                                                minimal
+                                                onPlanSelect={async (planId) => {
+                                                    if (planId === 2) { // Pro
+                                                        try {
+                                                            const token = localStorage.getItem("token");
+                                                            const response = await fetch("https://localhost:5001/upgrade-user-plan", {
+                                                                method: "POST",
+                                                                headers: {
+                                                                    "Authorization": `Bearer ${token}`,
+                                                                    "Content-Type": "application/json"
+                                                                },
+                                                                body: JSON.stringify({ plan: planId })
+                                                            });
+
+                                                            if (!response.ok) {
+                                                                throw new Error("Failed to upgrade plan");
+                                                            }
+
+                                                            await refreshProfile();
+
+                                                            setIsUpgradeDialogOpen(false); // Close dialog
+
+                                                            toast({
+                                                                title: "Upgraded to Pro!",
+                                                                description: "Your subscription has been updated successfully.",
+                                                                variant: "default"
+                                                            });
+
+                                                        } catch (error) {
+                                                            console.error("Upgrade error:", error);
+                                                            toast({
+                                                                title: "Upgrade Failed",
+                                                                description: "Could not process upgrade. Please try again.",
+                                                                variant: "destructive"
+                                                            });
+                                                        }
+                                                    }
+                                                }}
+                                            />
                                         </DialogContent>
                                     </Dialog>
                                 </div>
