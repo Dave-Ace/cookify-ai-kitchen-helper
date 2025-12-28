@@ -143,15 +143,18 @@ const Profile = () => {
                                                                 throw new Error("Failed to upgrade plan");
                                                             }
 
-                                                            await refreshProfile();
-
-                                                            setIsUpgradeDialogOpen(false); // Close dialog
-
-                                                            toast({
-                                                                title: "Upgraded to Pro!",
-                                                                description: "Your subscription has been updated successfully.",
-                                                                variant: "default"
-                                                            });
+                                                            const data = await response.json();
+                                                            if (data.authorization_url) {
+                                                                window.location.href = data.authorization_url;
+                                                            } else {
+                                                                await refreshProfile();
+                                                                setIsUpgradeDialogOpen(false);
+                                                                toast({
+                                                                    title: "Upgraded to Pro!",
+                                                                    description: "Your subscription has been updated successfully.",
+                                                                    variant: "default"
+                                                                });
+                                                            }
 
                                                         } catch (error) {
                                                             console.error("Upgrade error:", error);

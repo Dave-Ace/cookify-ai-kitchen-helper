@@ -254,8 +254,19 @@ export default function CompleteProfile() {
                 </CardContent>
             </Card>
 
-            <Dialog open={showPricing} onOpenChange={setShowPricing}>
-                <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+            <Dialog open={showPricing} onOpenChange={(open) => {
+                setShowPricing(open);
+                if (!open) {
+                    navigate("/dashboard");
+                }
+            }}>
+                <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => {
+                    // Prevent closing on interaction outside if we want to force a choice, 
+                    // but usually standard behavior is fine. 
+                    // If we want to ensure they see the pricing, we might want to prevent default.
+                    // But here, if they click outside, we just want to send them to dashboard.
+                    // The onOpenChange handle above handles it.
+                }}>
                     <DialogHeader>
                         <DialogTitle className="text-2xl text-center">Upgrade Your Kitchen AI</DialogTitle>
                         <DialogDescription className="text-center">
@@ -284,15 +295,20 @@ export default function CompleteProfile() {
                                         throw new Error("Failed to upgrade plan");
                                     }
 
-                                    await refreshProfile();
+                                    const data = await response.json();
+                                    if (data.authorization_url) {
+                                        window.location.href = data.authorization_url;
+                                    } else {
+                                        await refreshProfile();
+                                        toast({
+                                            title: "Welcome to Pro!",
+                                            description: "Your account has been upgraded.",
+                                            variant: "default"
+                                        });
+                                        navigate("/dashboard");
+                                    }
 
-                                    toast({
-                                        title: "Welcome to Pro!",
-                                        description: "Your account has been upgraded.",
-                                        variant: "default"
-                                    });
 
-                                    navigate("/dashboard");
 
                                 } catch (error) {
                                     console.error("Upgrade error:", error);

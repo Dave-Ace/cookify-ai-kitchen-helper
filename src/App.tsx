@@ -8,6 +8,7 @@ import Dashboard from "./pages/Dashboard";
 import Auth from "./pages/Auth";
 import Profile from "./pages/Profile";
 import CompleteProfile from "./pages/CompleteProfile";
+import PaymentProcessing from "./pages/PaymentProcessing";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { AuthProvider } from "./context/AuthContext";
@@ -22,7 +23,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <AuthProvider>
-        <GoogleOAuthProvider clientId="YOUR_GOOGLE_CLIENT_ID">
+        <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}>
           <BrowserRouter>
             <Routes>
               <Route path="/" element={<Landing />} />
@@ -51,6 +52,14 @@ const App = () => (
                 }
               />
               <Route path="/auth" element={<Auth />} />
+              <Route
+                path="/payment/processing"
+                element={
+                  <ProtectedRoute>
+                    <PaymentProcessing />
+                  </ProtectedRoute>
+                }
+              />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

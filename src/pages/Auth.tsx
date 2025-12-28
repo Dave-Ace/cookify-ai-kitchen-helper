@@ -92,17 +92,48 @@ const Auth = () => {
 
   const handleGoogleSuccess = async (credentialResponse: any) => {
     console.log("Google Auth Success:", credentialResponse);
-    // TODO: Send credentialResponse.credential to backend
-    // const response = await fetch("https://localhost:5001/api/auth/google", {
-    //   method: "POST",
-    //   headers: { "Content-Type": "application/json" },
-    //   body: JSON.stringify({ idToken: credentialResponse.credential }),
-    // });
-    toast({
-      title: "Google Auth",
-      description: "Google Sign-In successful (Backend integration pending)",
-      variant: "default",
-    });
+    setIsLoading(true);
+    try {
+      console.log("Initiating Google Auth API call...");
+
+
+      const response = await fetch(`https://localhost:5001/users/google-sign-in?idToken=${credentialResponse.credential}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      console.log("API Response status:", response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Google authentication failed" }));
+        throw new Error(errorData.message);
+      }
+
+      const token = await response.text();
+      const cleanToken = token.trim().replace(/^["']|["']$/g, "");
+
+      if (cleanToken && cleanToken !== "") {
+        login(cleanToken);
+        toast({
+          title: "Success",
+          description: "Signed in with Google successfully!",
+          variant: "default",
+        });
+        navigate("/dashboard");
+      } else {
+        throw new Error("No token received from server");
+      }
+
+    } catch (error) {
+      console.error("Google Auth Error:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Google authentication failed",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleGoogleError = () => {
