@@ -11,7 +11,7 @@ import { toast } from "@/hooks/use-toast";
 
 import { useAuth } from "@/context/AuthContext";
 import { GoogleLogin } from "@react-oauth/google";
-import logo from "@/assets/logo.png";
+import logo from "@/assets/logo-transparent.png";
 
 const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);

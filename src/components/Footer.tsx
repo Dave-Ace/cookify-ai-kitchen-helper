@@ -1,4 +1,4 @@
-import logo from "@/assets/logo.png";
+import logo from "@/assets/logo-transparent.png";
 import { NavLink } from "@/components/NavLink";
 
 const Footer = () => {

@@ -13,7 +13,7 @@ import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/context/AuthContext";
 import { useState } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import logo from "@/assets/logo.png";
+import logo from "@/assets/logo-transparent.png";
 import Pricing from "@/components/Pricing";
 
 const Navbar = () => {
