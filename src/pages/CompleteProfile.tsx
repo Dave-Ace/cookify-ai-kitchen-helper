@@ -80,14 +80,7 @@ export default function CompleteProfile() {
 
         if (!user) return;
 
-        if (!lifestyle) {
-            toast({
-                title: "Missing Information",
-                description: "Please select a lifestyle choice.",
-                variant: "destructive"
-            });
-            return;
-        }
+
 
         setIsLoading(true);
 
@@ -188,7 +181,7 @@ export default function CompleteProfile() {
 
                         {/* Lifestyle */}
                         <div className="space-y-3">
-                            <Label>Lifestyle Choice <span className="text-red-500">*</span></Label>
+                            <Label>Lifestyle Choice</Label>
                             <Select value={lifestyle} onValueChange={setLifestyle}>
                                 <SelectTrigger>
                                     <SelectValue placeholder="Select your lifestyle" />
@@ -270,7 +263,7 @@ export default function CompleteProfile() {
                     <DialogHeader>
                         <DialogTitle className="text-2xl text-center">Upgrade Your Kitchen AI</DialogTitle>
                         <DialogDescription className="text-center">
-                            Get the most out of Cookify with our Pro plan.
+                            Get the most out of SousAI with our Pro plan.
                         </DialogDescription>
                     </DialogHeader>
 

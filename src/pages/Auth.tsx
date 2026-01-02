@@ -11,6 +11,7 @@ import { toast } from "@/hooks/use-toast";
 
 import { useAuth } from "@/context/AuthContext";
 import { GoogleLogin } from "@react-oauth/google";
+import logo from "@/assets/logo.png";
 
 const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -70,13 +71,9 @@ const Auth = () => {
         variant: "default",
       });
 
-      // Switch to signin tab after successful registration
-      if (isSignUp) {
-        setActiveTab("signin");
-      } else {
-        // Redirect to dashboard after successful sign in
-        navigate("/dashboard");
-      }
+      // Navigate to dashboard for both signup and signin
+      // The dashboard will handle redirecting to complete-profile if needed
+      navigate("/dashboard");
     } catch (error) {
       console.error(error);
       // Show error toast
@@ -91,56 +88,36 @@ const Auth = () => {
   };
 
   const handleGoogleSuccess = async (credentialResponse: any) => {
-    console.log("Google Auth Success:", credentialResponse);
-    setIsLoading(true);
-    try {
-      console.log("Initiating Google Auth API call...");
-
-
-      const response = await fetch(`https://localhost:5001/users/google-sign-in?idToken=${credentialResponse.credential}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      console.log("API Response status:", response.status);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Google authentication failed" }));
-        throw new Error(errorData.message);
-      }
-
-      const token = await response.text();
-      const cleanToken = token.trim().replace(/^["']|["']$/g, "");
-
-      if (cleanToken && cleanToken !== "") {
-        login(cleanToken);
-        toast({
-          title: "Success",
-          description: "Signed in with Google successfully!",
-          variant: "default",
+    if (credentialResponse.credential) {
+      try {
+        const response = await fetch("https://localhost:5001/auth/google", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: credentialResponse.credential }),
         });
-        navigate("/dashboard");
-      } else {
-        throw new Error("No token received from server");
-      }
 
-    } catch (error) {
-      console.error("Google Auth Error:", error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Google authentication failed",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
+        if (!response.ok) {
+          throw new Error("Google authentication failed");
+        }
+
+        const data = await response.json();
+        login(data.token);
+        navigate("/dashboard");
+      } catch (error) {
+        console.error("Google Auth Error:", error);
+        toast({
+          title: "Error",
+          description: "Google sign in failed",
+          variant: "destructive",
+        });
+      }
     }
   };
 
   const handleGoogleError = () => {
-    console.log("Google Auth Failed");
     toast({
       title: "Error",
-      description: "Google Sign-In failed",
+      description: "Google sign in failed",
       variant: "destructive",
     });
   };
@@ -148,15 +125,16 @@ const Auth = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-accent to-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <NavLink to="/" className="inline-flex items-center gap-2 mb-4">
-            <ChefHat className="w-12 h-12 text-primary" />
+        <div className="flex justify-center mb-8">
+          <div className="flex items-center gap-2">
+            <img src={logo} alt="SousAI" className="w-12 h-12 object-contain" />
             <span className="text-3xl font-bold bg-gradient-hero bg-clip-text text-transparent">
-              Cookify
+              SousAI
             </span>
-          </NavLink>
-          <p className="text-muted-foreground">Start your culinary journey today</p>
+          </div>
         </div>
+        <p className="text-muted-foreground text-center">Start your culinary journey today</p>
+
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-2">
@@ -323,7 +301,7 @@ const Auth = () => {
         </Tabs>
       </div>
 
-    </div>
+    </div >
   );
 };
 

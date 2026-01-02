@@ -58,9 +58,9 @@ export default {
         'gradient-card': 'var(--gradient-card)',
       },
       boxShadow: {
-        'cookify-sm': 'var(--shadow-sm)',
-        'cookify-md': 'var(--shadow-md)',
-        'cookify-lg': 'var(--shadow-lg)',
+        'sousai-sm': 'var(--shadow-sm)',
+        'sousai-md': 'var(--shadow-md)',
+        'sousai-lg': 'var(--shadow-lg)',
       },
       transitionTimingFunction: {
         'smooth': 'cubic-bezier(0.4, 0, 0.2, 1)',

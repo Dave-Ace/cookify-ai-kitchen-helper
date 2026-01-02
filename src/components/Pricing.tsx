@@ -9,13 +9,15 @@ const pricingPlans = [
     name: "Free Trial",
     price: "₦0",
     period: "7 days",
-    description: "Perfect for trying out Cookify",
+    description: "Perfect for trying out SousAI",
     features: [
       { name: "1 AI recipe query per day", included: true },
       { name: "1 Add to grocery list", included: true },
       { name: "Dietary restriction filters", included: true },
+      { name: "Tailored to nationality", included: true },
       { name: "Unlimited AI recipe queries", included: false },
       { name: "Health & Lifestyle filters", included: false },
+      { name: "Cuisine filter", included: false },
       { name: "Health tips", included: false },
       { name: "Advanced nutritional analytics", included: false },
     ],
@@ -32,6 +34,7 @@ const pricingPlans = [
       { name: "Unlimited AI recipe queries", included: true },
       { name: "Unlimited Add to grocery list", included: true },
       { name: "All filters (Dietary, Health, Lifestyle)", included: true },
+      { name: "Cuisine filter", included: true },
       { name: "Priority AI processing", included: true },
       { name: "Health tips", included: true },
       { name: "Advanced nutritional analytics", included: true },
@@ -69,7 +72,7 @@ const Pricing = ({ minimal = false, onPlanSelect }: PricingProps) => {
             <Card
               key={index}
               className={`relative ${plan.highlighted
-                ? 'border-primary shadow-cookify-lg scale-105'
+                ? 'border-primary shadow-sousai-lg scale-105'
                 : 'border-border'
                 }`}
             >

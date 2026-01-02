@@ -30,7 +30,7 @@ const features = [
   {
     icon: Sparkles,
     title: "AI-Powered Suggestions",
-    description: "The more you use Cookify, the better it understands your taste and dietary preferences.",
+    description: "The more you use SousAI, the better it understands your taste and dietary preferences.",
   },
 ];
 
@@ -44,15 +44,15 @@ const Features = () => {
             <span className="bg-gradient-hero bg-clip-text text-transparent"> Cook Smarter</span>
           </h2>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Cookify combines AI technology with culinary expertise to make cooking easier, healthier, and more enjoyable.
+            SousAI combines AI technology with culinary expertise to make cooking easier, healthier, and more enjoyable.
           </p>
         </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
           {features.map((feature, index) => (
-            <Card 
-              key={index} 
-              className="bg-card hover:shadow-cookify-md transition-all duration-300 hover:-translate-y-1 border-border"
+            <Card
+              key={index}
+              className="bg-card hover:shadow-sousai-md transition-all duration-300 hover:-translate-y-1 border-border"
             >
               <CardHeader>
                 <div className="w-12 h-12 rounded-lg bg-gradient-hero flex items-center justify-center mb-4">

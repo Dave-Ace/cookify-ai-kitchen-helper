@@ -6,12 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 import { Badge } from "@/components/ui/badge";
-import { ChefHat, Plus, Search, X, ShoppingCart, BookmarkPlus, BookmarkCheck, Lightbulb, Copy, UtensilsCrossed, Heart, Leaf, Check, Lock } from "lucide-react";
+import { ChefHat, Plus, Search, X, ShoppingCart, BookmarkPlus, BookmarkCheck, Lightbulb, Copy, UtensilsCrossed, Heart, Leaf, Check, Lock, ChevronUp, ChevronDown, Sparkles, Bot } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import ChatInterface from "@/components/ChatInterface";
 import { useToast } from "@/hooks/use-toast";
 import Navbar from "@/components/Navbar";
 import { useAuth } from "@/context/AuthContext";
@@ -46,18 +47,18 @@ type Recipe = {
 
 // API Recipe Types
 // API Recipe Types
-type ApiRecipeIngredients = {
+export type ApiRecipeIngredients = {
   providedIngredient: string[];
   additionalIngredient: string[];
 };
 
-type ApiRecipe = {
+export type ApiRecipe = {
   id: string;
   image?: string;
   recipeName: string;
   description: string;
   ingredients: ApiRecipeIngredients;
-  instructions: string[];
+  instructions: string[] | null;
   cookingTime: string;
   difficulty: string;
   healthTip?: string;
@@ -130,19 +131,49 @@ type ApiGroceryListResponse = {
   hasNext: boolean;
 };
 
+// Suggestion Constants
+const SUGGESTED_DIETARY = [
+  "Vegan", "Vegetarian", "Pescatarian", "Keto", "Paleo",
+  "Gluten-Free", "Dairy-Free", "Halal", "Kosher"
+];
+
+const SUGGESTED_HEALTH = [
+  "Diabetes (Type 1)", "Diabetes (Type 2)", "Hypertension",
+  "Heart Disease", "Celiac Disease", "IBS (Low FODMAP)",
+  "Acid Reflux / GERD", "Kidney Disease",
+  "Peanut Allergy", "Tree Nut Allergy", "Dairy Allergy",
+  "Egg Allergy", "Soy Allergy", "Shellfish Allergy"
+];
+
+const SUGGESTED_LIFESTYLE = [
+  "Weight Loss", "Muscle Gain", "Maintenance",
+  "Active", "Sedentary", "Busy Professional",
+  "Meal Prep", "Budget Friendly"
+];
+
+const SUGGESTED_CUISINES = [
+  "Italian", "Mexican", "Chinese", "Indian", "Japanese", "Thai",
+  "French", "Mediterranean", "American", "Nigerian", "Lebanese", "Greek"
+];
+
 const Dashboard = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const { user, isLoading } = useAuth();
 
   useEffect(() => {
-    if (!isLoading && user && !user.userProfile) {
-      navigate("/complete-profile");
+    // Check if user is logged in but profile incomplete
+    // If userProfile is null OR if nationality is missing (empty string/undefined)
+    if (!isLoading && user) {
+      const isProfileIncomplete = !user.userProfile || !user.userProfile.nationality;
+      if (isProfileIncomplete) {
+        navigate("/complete-profile");
+      }
     }
   }, [user, isLoading, navigate]);
 
-  // Typo in backend response 'suscriptionPlan' is known
-  const isFreePlan = !user?.userProfile?.suscriptionPlan || user?.userProfile?.suscriptionPlan === "Free Trial";
+  // Check plan ID: 1 is Free, 2 is Pro
+  const isFreePlan = !user?.userProfile?.plan || user?.userProfile?.plan === 1;
 
   const [ingredients, setIngredients] = useState<string[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -152,8 +183,11 @@ const Dashboard = () => {
   const [healthInputValue, setHealthInputValue] = useState("");
   const [lifestyle, setLifestyle] = useState<string[]>([]);
   const [lifestyleInputValue, setLifestyleInputValue] = useState("");
+  const [cuisine, setCuisine] = useState<string>("");
   const [includeNewIngredients, setIncludeNewIngredients] = useState(false);
+  const [isPreferencesOpen, setIsPreferencesOpen] = useState(true);
 
+  // Suggested items for autocomplete/chips
   const [savedRecipes, setSavedRecipes] = useState<Recipe[]>([]);
 
   const [groceryList, setGroceryList] = useState<GroceryItem[]>([]);
@@ -435,6 +469,9 @@ const Dashboard = () => {
       if (lifestyleString) {
         params.append("lifestyle", lifestyleString);
       }
+      if (cuisine) {
+        params.append("cuisine", cuisine);
+      }
       if (includeNewIngredients) {
         params.append("include_new_ingredients", "true");
       }
@@ -486,24 +523,84 @@ const Dashboard = () => {
     }
   };
 
-  const saveRecipe = (recipe: Recipe) => {
-    const isAlreadySaved = savedRecipes.some(r => r.id === recipe.id);
+  const fetchInstructions = async (recipe: ApiRecipe) => {
+    try {
+      if (recipe.instructions && recipe.instructions.length > 0) return;
 
-    if (isAlreadySaved) {
-      const updated = savedRecipes.filter(r => r.id !== recipe.id);
-      setSavedRecipes(updated);
-      localStorage.setItem("savedRecipes", JSON.stringify(updated));
-      toast({
-        title: "Recipe removed",
-        description: "Recipe removed from your journal.",
+      const token = localStorage.getItem("token");
+      if (!token) return;
+
+      console.log("Fetching instructions for:", recipe.recipeName);
+
+      const response = await fetch(`https://localhost:5001/recipes/details?recipeId=${recipe.id}`, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        }
       });
+
+      if (!response.ok) throw new Error("Endpoint not ready");
+
+      const data = await response.json();
+
+      // Map the structured instructions (step, instruction) to a string array
+      const instructionList = Array.isArray(data.instructions)
+        ? data.instructions.map((item: any) => item.instruction)
+        : [];
+
+      setSelectedRecipe(prev => prev ? { ...prev, instructions: instructionList } : null);
+
+      setApiRecipes(prev => prev.map(r =>
+        r.id === recipe.id ? { ...r, instructions: instructionList } : r
+      ));
+
+    } catch (error) {
+      console.log("Instruction fetch failed (endpoint might not be ready)", error);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedRecipe && !selectedRecipe.instructions) {
+      fetchInstructions(selectedRecipe);
+    }
+  }, [selectedRecipe]);
+
+  const saveRecipe = async (recipe: ApiRecipe) => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      try {
+        const response = await fetch(`https://localhost:5001/recipes/save?recipeId=${recipe.id}`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json",
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to save recipe");
+        }
+
+        toast({
+          title: "Recipe saved!",
+          description: "Recipe added to your journal.",
+        });
+
+      } catch (error) {
+        console.error("Failed to save recipe", error);
+        toast({
+          title: "Error",
+          description: "Could not save recipe to cloud.",
+          variant: "destructive"
+        });
+      }
     } else {
-      const updated = [...savedRecipes, recipe];
-      setSavedRecipes(updated);
-      localStorage.setItem("savedRecipes", JSON.stringify(updated));
+      // Fallback or just notify user to log in
       toast({
-        title: "Recipe saved!",
-        description: "Recipe added to your journal.",
+        title: "Login Required",
+        description: "Please log in to save recipes to the cloud.",
+        variant: "destructive"
       });
     }
   };
@@ -725,14 +822,15 @@ const Dashboard = () => {
                       {ingredients.map((ingredient, index) => (
                         <Badge
                           key={index}
-                          variant="secondary"
-                          className="text-sm py-1 px-2 flex items-center gap-1 bg-primary/10 hover:bg-primary/20 transition-colors"
+                          className="text-sm py-1 px-3 flex items-center gap-2 bg-gradient-hero text-white hover:opacity-90 transition-all shadow-sm border-0"
                         >
                           {ingredient}
-                          <X
-                            className="w-3 h-3 cursor-pointer hover:text-destructive transition-colors"
-                            onClick={() => removeIngredient(index)}
-                          />
+                          <div className="bg-white/20 rounded-full p-0.5 hover:bg-white/40 transition-colors">
+                            <X
+                              className="w-3 h-3 cursor-pointer"
+                              onClick={() => removeIngredient(index)}
+                            />
+                          </div>
                         </Badge>
                       ))}
                     </div>
@@ -746,168 +844,287 @@ const Dashboard = () => {
 
               {/* Preferences Card */}
               <Card className="shadow-lg border-2">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-primary/10">
-                      <Heart className="w-5 h-5 text-primary" />
+                <CardHeader className="pb-4 cursor-pointer" onClick={() => setIsPreferencesOpen(!isPreferencesOpen)}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-primary/10">
+                        <Heart className="w-5 h-5 text-primary" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg">Preferences</CardTitle>
+                      </div>
                     </div>
-                    <div>
-                      <CardTitle className="text-lg">Preferences</CardTitle>
-                    </div>
+                    {isPreferencesOpen ? <ChevronUp className="w-5 h-5 text-muted-foreground" /> : <ChevronDown className="w-5 h-5 text-muted-foreground" />}
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-6">
-                  <Accordion type="multiple" className="w-full">
-                    {/* Dietary */}
-                    <AccordionItem value="dietary">
-                      <AccordionTrigger>Dietary Restrictions</AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-2 pt-2 px-1">
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder="e.g. vegan"
-                              value={dietaryInputValue}
-                              onChange={(e) => setDietaryInputValue(e.target.value)}
-                              onKeyPress={(e) => e.key === "Enter" && addDietaryRestriction()}
-                              className="h-9"
-                            />
-                            <Button onClick={addDietaryRestriction} variant="outline" size="icon" className="h-9 shrink-0">
-                              <Plus className="w-4 h-4" />
-                            </Button>
+                {isPreferencesOpen && (
+                  <CardContent className="space-y-6">
+                    <Accordion type="multiple" className="w-full">
+                      {/* Dietary */}
+                      <AccordionItem value="dietary">
+                        <AccordionTrigger>Dietary Restrictions</AccordionTrigger>
+                        <AccordionContent>
+                          <div className="space-y-2 pt-2 px-1">
+                            <div className="flex gap-2">
+                              <Input
+                                placeholder="e.g. vegan"
+                                value={dietaryInputValue}
+                                onChange={(e) => setDietaryInputValue(e.target.value)}
+                                onKeyPress={(e) => e.key === "Enter" && addDietaryRestriction()}
+                                className="h-9"
+                              />
+                              <Button onClick={addDietaryRestriction} variant="outline" size="icon" className="h-9 shrink-0">
+                                <Plus className="w-4 h-4" />
+                              </Button>
+                            </div>
+                            {dietaryRestrictions.length > 0 && (
+                              <div className="flex flex-wrap gap-2">
+                                {dietaryRestrictions.map((item, index) => (
+                                  <Badge key={index} variant="secondary" className="text-xs bg-green-50 dark:bg-green-950/30">
+                                    {item}
+                                    <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => removeDietaryRestriction(index)} />
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Suggestions */}
+                            <div className="pt-2">
+                              <p className="text-xs text-muted-foreground mb-1.5">Suggestions:</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {SUGGESTED_DIETARY.filter(s => !dietaryRestrictions.includes(s)).map(suggestion => (
+                                  <Badge
+                                    key={suggestion}
+                                    variant="outline"
+                                    className="cursor-pointer hover:bg-muted text-xs font-normal"
+                                    onClick={() => {
+                                      if (!dietaryRestrictions.includes(suggestion)) {
+                                        setDietaryRestrictions([...dietaryRestrictions, suggestion]);
+                                      }
+                                    }}
+                                  >
+                                    + {suggestion}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
                           </div>
-                          {dietaryRestrictions.length > 0 && (
-                            <div className="flex flex-wrap gap-2">
-                              {dietaryRestrictions.map((item, index) => (
-                                <Badge key={index} variant="secondary" className="text-xs bg-green-50 dark:bg-green-950/30">
-                                  {item}
-                                  <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => removeDietaryRestriction(index)} />
+                        </AccordionContent>
+                      </AccordionItem>
+
+                      {/* Health */}
+                      <AccordionItem value="health" disabled={isFreePlan}>
+                        <AccordionTrigger className="flex gap-2">
+                          <span>Health Conditions</span>
+                          {isFreePlan && (
+                            <div className="flex items-center gap-2 ml-auto">
+                              <Badge variant="secondary" className="text-[10px] px-1.5 h-5 bg-muted text-muted-foreground font-normal">
+                                Pro Only
+                              </Badge>
+                              <Lock className="w-3 h-3 text-muted-foreground" />
+                            </div>
+                          )}
+                        </AccordionTrigger>
+                        <AccordionContent>
+                          <div className="space-y-2 pt-2 px-1">
+                            <div className="flex gap-2">
+                              <Input
+                                placeholder={isFreePlan ? "Upgrade to Pro to use this filter" : "e.g. peanut allergy"}
+                                value={healthInputValue}
+                                onChange={(e) => setHealthInputValue(e.target.value)}
+                                onKeyPress={(e) => e.key === "Enter" && addHealthRestriction()}
+                                className="h-9"
+                                disabled={isFreePlan}
+                              />
+                              <Button
+                                onClick={addHealthRestriction}
+                                variant="outline"
+                                size="icon"
+                                className="h-9 shrink-0"
+                                disabled={isFreePlan}
+                              >
+                                <Plus className="w-4 h-4" />
+                              </Button>
+                            </div>
+                            {healthRestrictions.length > 0 && (
+                              <div className="flex flex-wrap gap-2">
+                                {healthRestrictions.map((item, index) => (
+                                  <Badge key={index} variant="secondary" className="text-xs bg-red-50 dark:bg-red-950/30">
+                                    {item}
+                                    <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => removeHealthRestriction(index)} />
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Suggestions */}
+                          <div className={`pt-2 ${isFreePlan ? 'opacity-50 pointer-events-none' : ''}`}>
+                            <p className="text-xs text-muted-foreground mb-1.5">Common Conditions & Allergies:</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {SUGGESTED_HEALTH.filter(s => !healthRestrictions.includes(s)).map(suggestion => (
+                                <Badge
+                                  key={suggestion}
+                                  variant="outline"
+                                  className="cursor-pointer hover:bg-muted text-xs font-normal"
+                                  onClick={() => {
+                                    if (!isFreePlan && !healthRestrictions.includes(suggestion)) {
+                                      setHealthRestrictions([...healthRestrictions, suggestion]);
+                                    }
+                                  }}
+                                >
+                                  + {suggestion}
                                 </Badge>
                               ))}
                             </div>
-                          )}
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
-
-                    {/* Health */}
-                    <AccordionItem value="health">
-                      <AccordionTrigger className="flex gap-2">
-                        Health Conditions
-                        {isFreePlan && <Lock className="w-3 h-3 text-muted-foreground" />}
-                      </AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-2 pt-2 px-1">
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder={isFreePlan ? "Upgrade to Pro to use this filter" : "e.g. peanut allergy"}
-                              value={healthInputValue}
-                              onChange={(e) => setHealthInputValue(e.target.value)}
-                              onKeyPress={(e) => e.key === "Enter" && addHealthRestriction()}
-                              className="h-9"
-                              disabled={isFreePlan}
-                            />
-                            <Button
-                              onClick={addHealthRestriction}
-                              variant="outline"
-                              size="icon"
-                              className="h-9 shrink-0"
-                              disabled={isFreePlan}
-                            >
-                              <Plus className="w-4 h-4" />
-                            </Button>
                           </div>
-                          {healthRestrictions.length > 0 && (
-                            <div className="flex flex-wrap gap-2">
-                              {healthRestrictions.map((item, index) => (
-                                <Badge key={index} variant="secondary" className="text-xs bg-red-50 dark:bg-red-950/30">
-                                  {item}
-                                  <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => removeHealthRestriction(index)} />
-                                </Badge>
-                              ))}
+                        </AccordionContent>
+                      </AccordionItem>
+
+                      {/* Lifestyle */}
+                      <AccordionItem value="lifestyle" disabled={isFreePlan}>
+                        <AccordionTrigger className="flex gap-2">
+                          <span>Lifestyle Goals</span>
+                          {isFreePlan && (
+                            <div className="flex items-center gap-2 ml-auto">
+                              <Badge variant="secondary" className="text-[10px] px-1.5 h-5 bg-muted text-muted-foreground font-normal">
+                                Pro Only
+                              </Badge>
+                              <Lock className="w-3 h-3 text-muted-foreground" />
                             </div>
                           )}
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
+                        </AccordionTrigger>
+                        <AccordionContent>
+                          <div className="space-y-2 pt-2 px-1">
+                            <div className="flex gap-2">
+                              <Input
+                                placeholder={isFreePlan ? "Upgrade to Pro to use this filter" : "e.g. keto"}
+                                value={lifestyleInputValue}
+                                onChange={(e) => setLifestyleInputValue(e.target.value)}
+                                onKeyPress={(e) => e.key === "Enter" && addLifestyle()}
+                                className="h-9"
+                                disabled={isFreePlan}
+                              />
+                              <Button
+                                onClick={addLifestyle}
+                                variant="outline"
+                                size="icon"
+                                className="h-9 shrink-0"
+                                disabled={isFreePlan}
+                              >
+                                <Plus className="w-4 h-4" />
+                              </Button>
+                            </div>
+                            {lifestyle.length > 0 && (
+                              <div className="flex flex-wrap gap-2">
+                                {lifestyle.map((item, index) => (
+                                  <Badge key={index} variant="secondary" className="text-xs bg-blue-50 dark:bg-blue-950/30">
+                                    {item}
+                                    <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => removeLifestyle(index)} />
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
 
-                    {/* Lifestyle */}
-                    <AccordionItem value="lifestyle">
-                      <AccordionTrigger className="flex gap-2">
-                        Lifestyle Goals
-                        {isFreePlan && <Lock className="w-3 h-3 text-muted-foreground" />}
-                      </AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-2 pt-2 px-1">
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder={isFreePlan ? "Upgrade to Pro to use this filter" : "e.g. keto"}
-                              value={lifestyleInputValue}
-                              onChange={(e) => setLifestyleInputValue(e.target.value)}
-                              onKeyPress={(e) => e.key === "Enter" && addLifestyle()}
-                              className="h-9"
-                              disabled={isFreePlan}
-                            />
-                            <Button
-                              onClick={addLifestyle}
-                              variant="outline"
-                              size="icon"
-                              className="h-9 shrink-0"
-                              disabled={isFreePlan}
-                            >
-                              <Plus className="w-4 h-4" />
-                            </Button>
+                            {/* Suggestions */}
+                            <div className={`pt-2 ${isFreePlan ? 'opacity-50 pointer-events-none' : ''}`}>
+                              <p className="text-xs text-muted-foreground mb-1.5">Suggestions:</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {SUGGESTED_LIFESTYLE.filter(s => !lifestyle.includes(s)).map(suggestion => (
+                                  <Badge
+                                    key={suggestion}
+                                    variant="outline"
+                                    className="cursor-pointer hover:bg-muted text-xs font-normal"
+                                    onClick={() => {
+                                      if (!isFreePlan && !lifestyle.includes(suggestion)) {
+                                        setLifestyle([...lifestyle, suggestion]);
+                                      }
+                                    }}
+                                  >
+                                    + {suggestion}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
                           </div>
-                          {lifestyle.length > 0 && (
-                            <div className="flex flex-wrap gap-2">
-                              {lifestyle.map((item, index) => (
-                                <Badge key={index} variant="secondary" className="text-xs bg-blue-50 dark:bg-blue-950/30">
-                                  {item}
-                                  <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => removeLifestyle(index)} />
-                                </Badge>
-                              ))}
+                        </AccordionContent>
+                      </AccordionItem>
+
+                      {/* Cuisine */}
+                      <AccordionItem value="cuisine" disabled={isFreePlan}>
+                        <AccordionTrigger className="flex gap-2">
+                          <span>Cuisine Preference</span>
+                          {isFreePlan && (
+                            <div className="flex items-center gap-2 ml-auto">
+                              <Badge variant="secondary" className="text-[10px] px-1.5 h-5 bg-muted text-muted-foreground font-normal">
+                                Pro Only
+                              </Badge>
+                              <Lock className="w-3 h-3 text-muted-foreground" />
                             </div>
                           )}
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
-                  </Accordion>
+                        </AccordionTrigger>
+                        <AccordionContent>
+                          <div className="space-y-4 pt-2 px-1">
+                            {isFreePlan && user?.userProfile?.nationality && (
+                              <div className="p-3 bg-primary/5 rounded-lg border border-primary/10">
+                                <p className="text-sm font-medium text-primary flex items-center gap-2">
+                                  <Sparkles className="w-4 h-4" />
+                                  Tailored to Nationality
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Your recipes are automatically optimized for <strong>{user.userProfile.nationality}</strong> tastes as part of your Free Trial.
+                                </p>
+                              </div>
+                            )}
 
-                  <div className="pt-2">
-                    <div className="flex items-center space-x-2 mb-4">
-                      <Checkbox
-                        id="new-ingredients"
-                        checked={includeNewIngredients}
-                        onCheckedChange={(checked) => setIncludeNewIngredients(checked as boolean)}
-                      />
-                      <label htmlFor="new-ingredients" className="text-sm cursor-pointer">
-                        Allow extra ingredients
-                      </label>
-                    </div>
-
-                    <Button
-                      onClick={() => {
-                        setActiveTab("search"); // Ensure we switch to results view
-                        handleSearch();
-                      }}
-                      disabled={ingredients.length === 0 || isLoadingRecipes}
-                      className="w-full bg-gradient-hero hover:opacity-90 transition-opacity"
-                      size="lg"
-                    >
-                      {isLoadingRecipes ? (
-                        <>
-                          <div className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          Thinking...
-                        </>
-                      ) : (
-                        <>
-                          <Lightbulb className="w-4 h-4 mr-2" />
-                          Generate Recipes
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </CardContent>
+                            <div className="space-y-2">
+                              <p className="text-xs text-muted-foreground">Select specific cuisines (Pro only):</p>
+                              <div className="flex flex-wrap gap-1.5 opacity-100">
+                                {SUGGESTED_CUISINES.map(suggestion => (
+                                  <Badge
+                                    key={suggestion}
+                                    variant={cuisine === suggestion ? "default" : "outline"}
+                                    className={`cursor-pointer ${isFreePlan ? 'opacity-50 pointer-events-none' : 'hover:bg-primary/90'} text-xs font-normal`}
+                                    onClick={() => {
+                                      if (!isFreePlan) {
+                                        setCuisine(cuisine === suggestion ? "" : suggestion);
+                                      }
+                                    }}
+                                  >
+                                    {suggestion}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    </Accordion>
+                  </CardContent>
+                )}
               </Card>
+
+              <Button
+                onClick={() => {
+                  setActiveTab("search");
+                  handleSearch();
+                }}
+                disabled={ingredients.length === 0 || isLoadingRecipes}
+                className="w-full bg-gradient-hero hover:opacity-90 transition-opacity"
+                size="lg"
+              >
+                {isLoadingRecipes ? (
+                  <>
+                    <div className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Thinking...
+                  </>
+                ) : (
+                  <>
+                    <Lightbulb className="w-4 h-4 mr-2" />
+                    Generate Recipes
+                  </>
+                )}
+              </Button>
             </div>
           </div>
 
@@ -1010,14 +1227,7 @@ const Dashboard = () => {
                                     <Button
                                       variant={isSaved ? "secondary" : "outline"}
                                       size="sm"
-                                      onClick={() => saveRecipe({
-                                        id: recipeId,
-                                        title: recipe.recipeName,
-                                        image: recipe.image || "/placeholder.svg",
-                                        prepTime: recipe.cookingTime,
-                                        calories: "",
-                                        missingIngredients: recipe.ingredients.additionalIngredient
-                                      })}
+                                      onClick={() => saveRecipe(recipe)}
                                       className="flex-1"
                                       disabled={isSaved}
                                     >
@@ -1340,92 +1550,134 @@ const Dashboard = () => {
                     </div>
                   </DialogHeader>
 
-                  <div className="flex-1 overflow-y-auto p-6 space-y-8">
-                    {/* Description */}
-                    <div className="prose prose-sm max-w-none text-muted-foreground text-lg leading-relaxed">
-                      {selectedRecipe.description}
+                  <Tabs defaultValue="details" className="flex-1 flex flex-col overflow-hidden">
+                    <div className="px-6 border-b bg-muted/20">
+                      <TabsList className="w-full justify-start h-auto p-0 bg-transparent gap-6">
+                        <TabsTrigger
+                          value="details"
+                          className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none transition-none"
+                        >
+                          <UtensilsCrossed className="w-4 h-4 mr-2" />
+                          Recipe Details
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="chat"
+                          className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none transition-none"
+                        >
+                          <Bot className="w-4 h-4 mr-2" />
+                          Ask Chef
+                        </TabsTrigger>
+                      </TabsList>
                     </div>
 
-                    {/* Ingredients Grid */}
-                    <div className="grid md:grid-cols-2 gap-6">
-                      <div className="bg-green-50/50 dark:bg-green-950/10 p-5 rounded-xl border border-green-100 dark:border-green-900/20">
-                        <h3 className="font-semibold mb-4 flex items-center gap-2 text-green-700 dark:text-green-400">
-                          <div className="p-1.5 rounded-lg bg-green-100 dark:bg-green-900/30">
-                            <BookmarkCheck className="w-4 h-4" />
-                          </div>
-                          Have Ingredients
-                        </h3>
-                        <div className="flex flex-wrap gap-2">
-                          {selectedRecipe.ingredients.providedIngredient.map((item, i) => (
-                            <Badge key={i} variant="secondary" className="bg-white dark:bg-green-950/30 text-green-700 dark:text-green-400 hover:bg-green-50 border-green-200">
-                              {item}
-                            </Badge>
-                          ))}
-                        </div>
+                    <TabsContent value="details" className="flex-1 overflow-y-auto p-6 space-y-8 mt-0 border-0 outline-none data-[state=inactive]:hidden">
+                      {/* Description */}
+                      <div className="prose prose-sm max-w-none text-muted-foreground text-lg leading-relaxed">
+                        {selectedRecipe.description}
                       </div>
 
-                      <div className="bg-amber-50/50 dark:bg-amber-950/10 p-5 rounded-xl border border-amber-100 dark:border-amber-900/20">
-                        <h3 className="font-semibold mb-4 flex items-center gap-2 text-amber-700 dark:text-amber-400">
-                          <div className="p-1.5 rounded-lg bg-amber-100 dark:bg-amber-900/30">
-                            <ShoppingCart className="w-4 h-4" />
-                          </div>
-                          Missing Ingredients
-                        </h3>
-                        <div className="flex flex-wrap gap-2">
-                          {selectedRecipe.ingredients.additionalIngredient.map((item, i) => (
-                            <Badge key={i} variant="secondary" className="bg-white dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 hover:bg-amber-50 border-amber-200">
-                              {item}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Instructions */}
-                    <div>
-                      <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                        <span className="p-1.5 rounded-lg bg-primary/10 text-primary">
-                          <ChefHat className="w-5 h-5" />
-                        </span>
-                        Instructions
-                      </h3>
-                      <div className="pl-2">
-                        <ul className="space-y-4 list-none">
-                          {(Array.isArray(selectedRecipe.instructions)
-                            ? selectedRecipe.instructions.flatMap(step => step.split('.'))
-                            : (selectedRecipe.instructions as unknown as string)
-                              .split('.')
-                          ).filter(step => step.trim().length > 0)
-                            .map((step, i) => (
-                              <li key={i} className="flex gap-4 text-muted-foreground leading-relaxed group">
-                                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center text-xs font-bold mt-0.5 group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                                  {i + 1}
-                                </span>
-                                <span>{step}</span>
-                              </li>
+                      {/* Ingredients Grid */}
+                      <div className="grid md:grid-cols-2 gap-6">
+                        <div className="bg-green-50/50 dark:bg-green-950/10 p-5 rounded-xl border border-green-100 dark:border-green-900/20">
+                          <h3 className="font-semibold mb-4 flex items-center gap-2 text-green-700 dark:text-green-400">
+                            <div className="p-1.5 rounded-lg bg-green-100 dark:bg-green-900/30">
+                              <BookmarkCheck className="w-4 h-4" />
+                            </div>
+                            Have Ingredients
+                          </h3>
+                          <div className="flex flex-wrap gap-2">
+                            {selectedRecipe.ingredients.providedIngredient.map((item, i) => (
+                              <Badge key={i} variant="secondary" className="bg-white dark:bg-green-950/30 text-green-700 dark:text-green-400 hover:bg-green-50 border-green-200">
+                                {item}
+                              </Badge>
                             ))}
-                        </ul>
-                      </div>
-                    </div>
-
-                    {/* Health Tip */}
-                    {selectedRecipe.healthTip && (
-                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 p-5 rounded-xl border border-blue-100 dark:border-blue-900/20">
-                        <div className="flex gap-4">
-                          <div className="p-2 rounded-full bg-blue-100 dark:bg-blue-900/30 h-fit">
-                            <Heart className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                           </div>
-                          <div>
-                            <h4 className="font-semibold text-blue-700 dark:text-blue-400 mb-1">Health Tip</h4>
-                            <p className="text-sm text-blue-600/90 dark:text-blue-300 leading-relaxed">
-                              {selectedRecipe.healthTip}
-                            </p>
+                        </div>
+
+                        <div className="bg-amber-50/50 dark:bg-amber-950/10 p-5 rounded-xl border border-amber-100 dark:border-amber-900/20">
+                          <h3 className="font-semibold mb-4 flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                            <div className="p-1.5 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+                              <ShoppingCart className="w-4 h-4" />
+                            </div>
+                            Missing Ingredients
+                          </h3>
+                          <div className="flex flex-wrap gap-2">
+                            {selectedRecipe.ingredients.additionalIngredient.map((item, i) => (
+                              <Badge key={i} variant="secondary" className="bg-white dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 hover:bg-amber-50 border-amber-200">
+                                {item}
+                              </Badge>
+                            ))}
                           </div>
                         </div>
                       </div>
-                    )}
-                  </div>
 
+                      {/* Instructions */}
+                      <div>
+                        <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                          <span className="p-1.5 rounded-lg bg-primary/10 text-primary">
+                            <ChefHat className="w-5 h-5" />
+                          </span>
+                          Instructions
+                        </h3>
+                        <div className="pl-2">
+                          {selectedRecipe.instructions && selectedRecipe.instructions.length > 0 ? (
+                            <ul className="space-y-4 list-none">
+                              {(Array.isArray(selectedRecipe.instructions)
+                                ? selectedRecipe.instructions.flatMap(step => step.split('.'))
+                                : (selectedRecipe.instructions as unknown as string).split('.')
+                              ).filter(step => step.trim().length > 0).map((step, i) => (
+                                <li key={i} className="flex gap-4 text-muted-foreground leading-relaxed group">
+                                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center text-xs font-bold mt-0.5 group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                                    {i + 1}
+                                  </span>
+                                  <span>{step}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground bg-secondary/20 rounded-xl border border-dashed">
+                              <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin mb-3"></div>
+                              <p className="text-sm font-medium">Chef AI is writing the instructions...</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Health Tip */}
+                      <div>
+                        {selectedRecipe.healthTip && (
+                          <div className="bg-blue-50/50 dark:bg-blue-950/20 p-5 rounded-xl border border-blue-100 dark:border-blue-900/20">
+                            <div className="flex items-start gap-4">
+                              <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg shrink-0">
+                                <Heart className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                              </div>
+                              <div>
+                                <h4 className="font-semibold text-blue-700 dark:text-blue-400 mb-1">Health Tip</h4>
+                                <p className="text-sm text-blue-600/90 dark:text-blue-300 leading-relaxed">
+                                  {selectedRecipe.healthTip}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="chat" className="flex-1 overflow-hidden p-6 mt-0 border-0 outline-none data-[state=inactive]:hidden flex flex-col">
+                      <div className="flex-1 flex flex-col">
+                        <div className="mb-4">
+                          <h3 className="text-lg font-semibold flex items-center gap-2">
+                            <Bot className="w-5 h-5 text-primary" />
+                            Chat with Chef AI
+                          </h3>
+                          <p className="text-sm text-muted-foreground">
+                            Ask questions about ingredients, substitutions, or cooking steps for <strong>{selectedRecipe.recipeName}</strong>.
+                          </p>
+                        </div>
+                        <ChatInterface recipe={selectedRecipe} />
+                      </div>
+                    </TabsContent>
+                  </Tabs>
                   {/* Footer Actions */}
                   <div className="p-6 border-t bg-background mt-auto sticky bottom-0 z-10 shrink-0 gap-3 flex">
                     <Button
@@ -1453,7 +1705,7 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
-    </div>
+    </div >
   );
 };
 
