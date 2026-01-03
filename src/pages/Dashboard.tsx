@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import ChatInterface from "@/components/ChatInterface";
+import FeedbackModal from "@/components/FeedbackModal";
 import { useToast } from "@/hooks/use-toast";
 import Navbar from "@/components/Navbar";
 import { useAuth } from "@/context/AuthContext";
@@ -227,6 +228,64 @@ const Dashboard = () => {
     }
   }, []);
 
+  // Feedback State & Logic
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+
+  const handleFeedbackSubmit = async (rating: number, comment: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch("https://localhost:5001/reviews", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { "Authorization": `Bearer ${token}` })
+        },
+        body: JSON.stringify({
+          rating,
+          comment,
+          recipeId: selectedRecipe?.id // If available in context
+        })
+      });
+
+      const responseData = await response.json();
+      if (!response.ok || !responseData.success) {
+        throw new Error(responseData.error || "Failed to submit feedback");
+      }
+
+      toast({
+        title: "Thank you!",
+        description: "We appreciate your feedback.",
+      });
+    } catch (error) {
+      console.error("Failed to submit feedback", error);
+      // Still show success to user to be nice ? No, let's respect the user request to show error in toast if false
+      // actually the prompt says "if success is false let the value in error show in the toast"
+      // But since this is a background feedback form, showing "Failed" might be better than fake success if it actually failed.
+      // However, the catch block catches network errors too.
+      // I will show the error message.
+      toast({
+        title: "Feedback Error",
+        description: error instanceof Error ? error.message : "Could not submit feedback.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const checkFeedbackTrigger = () => {
+    // Logic: Trigger every 3rd recipe view
+    const currentCount = parseInt(localStorage.getItem("recipeViewCount") || "0");
+    const newCount = currentCount + 1;
+    localStorage.setItem("recipeViewCount", newCount.toString());
+
+    // Trigger on 3rd, 6th, etc...
+    if (newCount > 0 && newCount % 3 === 0) {
+      // Small delay so it doesn't pop up INSTANTLY when opening the recipe
+      setTimeout(() => {
+        setIsFeedbackOpen(true);
+      }, 10000); // Show after 10 seconds of viewing the recipe
+    }
+  };
+
   // Save grocery list to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem("groceryList", JSON.stringify(groceryList));
@@ -273,12 +332,13 @@ const Dashboard = () => {
         return;
       }
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Failed to fetch user recipes" }));
-        throw new Error(errorData.message || "Failed to fetch user recipes");
+      const responseData = await response.json();
+
+      if (!response.ok || !responseData.success) {
+        throw new Error(responseData.error || "Failed to fetch user recipes");
       }
 
-      const data: UserRecipesResponse = await response.json();
+      const data: UserRecipesResponse = responseData.data;
       setUserRecipes(data.items || []);
       setUserRecipesMeta({
         totalPages: data.totalPages,
@@ -351,11 +411,13 @@ const Dashboard = () => {
         return;
       }
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch grocery list");
+      const responseData = await response.json();
+
+      if (!response.ok || !responseData.success) {
+        throw new Error(responseData.error || "Failed to fetch grocery list");
       }
 
-      const data: ApiGroceryListResponse = await response.json();
+      const data: ApiGroceryListResponse = responseData.data;
       setApiGroceryList(data.items || []);
     } catch (error) {
       console.error("Error fetching grocery list:", error);
@@ -497,12 +559,13 @@ const Dashboard = () => {
         return;
       }
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Failed to fetch recipes" }));
-        throw new Error(errorData.message || "Failed to fetch recipes");
+      const responseData = await response.json();
+
+      if (!response.ok || !responseData.success) {
+        throw new Error(responseData.error || "Failed to fetch recipes");
       }
 
-      const data: ApiResponse = await response.json();
+      const data: ApiResponse = responseData.data;
       // The API now returns the list directly
       setApiRecipes(data || []);
 
@@ -540,9 +603,10 @@ const Dashboard = () => {
         }
       });
 
-      if (!response.ok) throw new Error("Endpoint not ready");
+      const responseData = await response.json();
+      if (!response.ok || !responseData.success) throw new Error(responseData.error || "Endpoint not ready");
 
-      const data = await response.json();
+      const data = responseData.data;
 
       // Map the structured instructions (step, instruction) to a string array
       const instructionList = Array.isArray(data.instructions)
@@ -578,9 +642,26 @@ const Dashboard = () => {
           }
         });
 
-        if (!response.ok) {
-          throw new Error("Failed to save recipe");
+        const responseData = await response.json();
+
+        if (!response.ok || !responseData.success) {
+          throw new Error(responseData.error || "Failed to save recipe");
         }
+
+        // Update local state to reflect change immediately
+        // We need to convert ApiRecipe to Recipe (or UserRecipe) format for the state
+        const newSavedRecipe: Recipe = {
+          id: recipe.id,
+          title: recipe.recipeName,
+          image: recipe.image || "",
+          prepTime: recipe.cookingTime,
+          calories: "", // API doesn't return calories in list view usually, or we mock it
+          missingIngredients: recipe.ingredients.additionalIngredient
+        };
+
+        setSavedRecipes(prev => [...prev, newSavedRecipe]);
+        localStorage.setItem("savedRecipes", JSON.stringify([...savedRecipes, newSavedRecipe]));
+
 
         toast({
           title: "Recipe saved!",
@@ -591,7 +672,7 @@ const Dashboard = () => {
         console.error("Failed to save recipe", error);
         toast({
           title: "Error",
-          description: "Could not save recipe to cloud.",
+          description: error instanceof Error ? error.message : "Could not save recipe to cloud.",
           variant: "destructive"
         });
       }
@@ -640,8 +721,10 @@ const Dashboard = () => {
           body: JSON.stringify(payload)
         });
 
-        if (!response.ok) {
-          throw new Error("Failed to save to cloud list");
+        const responseData = await response.json();
+
+        if (!response.ok || !responseData.success) {
+          throw new Error(responseData.error || "Failed to save to cloud list");
         }
 
         toast({
@@ -658,7 +741,7 @@ const Dashboard = () => {
         console.error("Failed to add to API grocery list", error);
         toast({
           title: "Sync Error",
-          description: "Could not save to cloud. Items will be added locally.",
+          description: error instanceof Error ? error.message : "Could not save to cloud.",
           variant: "destructive"
         });
         // Fallback to local is implicit if we want, but for now let's just error
@@ -776,6 +859,11 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
+      <FeedbackModal
+        isOpen={isFeedbackOpen}
+        onClose={() => setIsFeedbackOpen(false)}
+        onSubmit={handleFeedbackSubmit}
+      />
 
       <div className="container mx-auto px-4 py-8 pt-24">
         <div className="grid lg:grid-cols-12 gap-8">
@@ -1219,6 +1307,7 @@ const Dashboard = () => {
                                         difficulty: recipe.difficulty
                                       };
                                       setSelectedRecipe(modalRecipe as unknown as UserRecipe);
+                                      checkFeedbackTrigger();
                                     }}
                                   >
                                     View Full Recipe
@@ -1683,13 +1772,24 @@ const Dashboard = () => {
                     <Button
                       className="flex-1 bg-gradient-hero shadow-md hover:shadow-lg transition-all"
                       size="lg"
-                      onClick={() => addToGroceryList({
-                        have: selectedRecipe.ingredients.providedIngredient,
-                        need: selectedRecipe.ingredients.additionalIngredient
-                      }, selectedRecipe.recipeName, selectedRecipe.id)}
+                      onClick={() => {
+                        const isSaved = isRecipeSaved(selectedRecipe.id);
+                        if (!isSaved) {
+                          // Cast generic structure to ApiRecipe for the save function
+                          saveRecipe({
+                            ...selectedRecipe,
+                            // Ensure structure matches what saveRecipe expects for local state update
+                            ingredients: selectedRecipe.ingredients
+                          } as unknown as ApiRecipe);
+                        }
+                        addToGroceryList({
+                          have: selectedRecipe.ingredients.providedIngredient,
+                          need: selectedRecipe.ingredients.additionalIngredient
+                        }, selectedRecipe.recipeName, selectedRecipe.id);
+                      }}
                     >
                       <ShoppingCart className="w-5 h-5 mr-2" />
-                      Add to Grocery List
+                      {isRecipeSaved(selectedRecipe.id) ? "Add to Grocery List" : "Save & Add to Grocery List"}
                     </Button>
                     <Button
                       variant="outline"

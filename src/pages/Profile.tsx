@@ -139,11 +139,13 @@ const Profile = () => {
                                                                 body: JSON.stringify({ plan: planId })
                                                             });
 
-                                                            if (!response.ok) {
-                                                                throw new Error("Failed to upgrade plan");
+                                                            const responseData = await response.json();
+
+                                                            if (!response.ok || !responseData.success) {
+                                                                throw new Error(responseData.error || "Failed to upgrade plan");
                                                             }
 
-                                                            const data = await response.json();
+                                                            const data = responseData.data;
                                                             if (data.authorization_url) {
                                                                 window.location.href = data.authorization_url;
                                                             } else {
@@ -160,7 +162,7 @@ const Profile = () => {
                                                             console.error("Upgrade error:", error);
                                                             toast({
                                                                 title: "Upgrade Failed",
-                                                                description: "Could not process upgrade. Please try again.",
+                                                                description: error instanceof Error ? error.message : "Could not process upgrade. Please try again.",
                                                                 variant: "destructive"
                                                             });
                                                         }

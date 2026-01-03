@@ -1,9 +1,46 @@
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { NavLink } from "@/components/NavLink";
 import { ChefHat, Sparkles } from "lucide-react";
 import heroImage from "@/assets/hero-cooking.jpg";
 
 const Hero = () => {
+  // Countdown Logic
+  const calculateTimeLeft = () => {
+    const savedTarget = localStorage.getItem("launchTargetDate");
+    let targetDate: number;
+
+    if (savedTarget) {
+      targetDate = parseInt(savedTarget, 10);
+    } else {
+      targetDate = new Date().getTime() + 7 * 24 * 60 * 60 * 1000; // 7 days from now
+      localStorage.setItem("launchTargetDate", targetDate.toString());
+    }
+
+    const difference = targetDate - new Date().getTime();
+    let timeLeft = { days: 0, hours: 0, minutes: 0, seconds: 0 };
+
+    if (difference > 0) {
+      timeLeft = {
+        days: Math.floor(difference / (1000 * 60 * 60 * 24)),
+        hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
+        minutes: Math.floor((difference / 1000 / 60) % 60),
+        seconds: Math.floor((difference / 1000) % 60),
+      };
+    }
+    return timeLeft;
+  };
+
+  const [timeLeft, setTimeLeft] = useState(calculateTimeLeft());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeLeft(calculateTimeLeft());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-16">
       <div
@@ -32,7 +69,7 @@ const Hero = () => {
             Simply tell us what you have in your kitchen, and our AI chef will create personalized recipes tailored to your taste and dietary needs.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-10">
             <Button
               size="lg"
               asChild
@@ -53,8 +90,25 @@ const Hero = () => {
             </Button>
           </div>
 
-          <p className="text-white/70 text-sm mt-6">
-            7-day free trial • No credit card required • 1 recipe per day
+          {/* Countdown Timer */}
+          <div className="grid grid-cols-4 gap-4 max-w-lg mx-auto mb-6">
+            {[
+              { label: "Days", value: timeLeft.days },
+              { label: "Hours", value: timeLeft.hours },
+              { label: "Minutes", value: timeLeft.minutes },
+              { label: "Seconds", value: timeLeft.seconds },
+            ].map((item, index) => (
+              <div key={index} className="flex flex-col items-center bg-white/10 backdrop-blur-md rounded-lg p-3 border border-white/10">
+                <span className="text-3xl md:text-4xl font-bold text-white font-mono">
+                  {item.value.toString().padStart(2, '0')}
+                </span>
+                <span className="text-xs text-white/70 uppercase tracking-widest">{item.label}</span>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-white/70 text-sm">
+            Limited Time Offer • 7-day free trial • No credit card required
           </p>
         </div>
       </div>

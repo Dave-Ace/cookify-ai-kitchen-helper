@@ -49,13 +49,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             });
 
             if (response.ok) {
-                const userData: User = await response.json();
-                setUser(userData);
-                setIsAuthenticated(true);
+                const json = await response.json();
+                if (json.success) {
+                    setUser(json.data);
+                    setIsAuthenticated(true);
+                } else {
+                    console.error("Failed to fetch profile:", json.error);
+                    // If the token is invalid (implied by failed profile fetch on load), might want to logout
+                    if (response.status === 401) {
+                        logout();
+                    }
+                }
             } else {
                 console.error("Failed to fetch profile");
-                // If fetch fails (e.g. 401), we might want to logout or just stay authenticated but without user data?
-                // For now, if 401, we should probably logout.
                 if (response.status === 401) {
                     logout();
                 }

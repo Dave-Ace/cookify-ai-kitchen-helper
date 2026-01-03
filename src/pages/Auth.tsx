@@ -43,18 +43,18 @@ const Auth = () => {
         body: JSON.stringify(isSignUp ? { email, password, firstname, lastname } : { email, password }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "An error occurred" }));
-        throw new Error(errorData.message || `${isSignUp ? "Registration" : "Login"} failed`);
+      const responseData = await response.json();
+
+      if (!response.ok || !responseData.success) {
+        throw new Error(responseData.error || `${isSignUp ? "Registration" : "Login"} failed`);
       }
 
-      // The API returns a plain string token, not JSON
-      const token = await response.text();
+      // The API returns the token in data
+      const token = responseData.data;
 
-      // Remove quotes from the token string if present
-      const cleanToken = token.trim().replace(/^["']|["']$/g, "");
-      console.log(token);
-      console.log(cleanToken);
+      // Remove quotes from the token string if present (just in case)
+      const cleanToken = token ? token.trim().replace(/^["']|["']$/g, "") : "";
+
       // Store the token string in localStorage
       if (cleanToken && cleanToken !== "") {
         login(cleanToken);
@@ -96,12 +96,13 @@ const Auth = () => {
           body: JSON.stringify({ token: credentialResponse.credential }),
         });
 
-        if (!response.ok) {
-          throw new Error("Google authentication failed");
+        const responseData = await response.json();
+
+        if (!response.ok || !responseData.success) {
+          throw new Error(responseData.error || "Google authentication failed");
         }
 
-        const data = await response.json();
-        login(data.token);
+        login(responseData.data.token || responseData.data); // Handle if data is object {token: ...} or just string
         navigate("/dashboard");
       } catch (error) {
         console.error("Google Auth Error:", error);

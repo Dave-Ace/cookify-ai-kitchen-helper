@@ -76,16 +76,16 @@ const ChatInterface = ({ recipe }: ChatInterfaceProps) => {
                 }),
             });
 
-            if (!response.ok) {
-                throw new Error("Failed to get response");
-            }
+            const responseData = await response.json();
 
-            const data = await response.json();
+            if (!response.ok || !responseData.success) {
+                throw new Error(responseData.error || "Failed to get response");
+            }
 
             const aiMessage: Message = {
                 id: (Date.now() + 1).toString(),
                 role: "assistant",
-                content: data.response || "I'm sorry, I couldn't process that. Please try again.",
+                content: responseData.data.response || responseData.data || "I'm sorry, I couldn't process that. Please try again.", // Handle if data IS the string or object
                 timestamp: new Date(),
             };
 
@@ -137,8 +137,8 @@ const ChatInterface = ({ recipe }: ChatInterfaceProps) => {
                             </Avatar>
                             <div
                                 className={`rounded-lg p-3 max-w-[80%] text-sm ${msg.role === "user"
-                                        ? "bg-primary text-primary-foreground"
-                                        : "bg-white dark:bg-card border shadow-sm"
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-white dark:bg-card border shadow-sm"
                                     }`}
                             >
                                 {/* Simple Markdown rendering support could go here */}

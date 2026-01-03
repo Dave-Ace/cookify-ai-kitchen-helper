@@ -34,12 +34,14 @@ const PaymentProcessing = () => {
                     }
                 });
 
-                if (!response.ok) {
-                    throw new Error("Verification request failed");
+                const responseData = await response.json();
+                console.log("Verification response:", responseData);
+
+                if (!response.ok || !responseData.success) {
+                    throw new Error(responseData.error || "Verification request failed");
                 }
 
-                const data = await response.json();
-                console.log("Verification response:", data);
+                const data = responseData.data;
 
                 if (data.status === "success") {
                     setViewState("success");
@@ -78,7 +80,7 @@ const PaymentProcessing = () => {
                 setStatusMessage("Could not verify payment status.");
                 toast({
                     title: "Verification Error",
-                    description: "Could not verify payment status. Please contact support.",
+                    description: error instanceof Error ? error.message : "Could not verify payment status. Please contact support.",
                     variant: "destructive"
                 });
                 setTimeout(() => navigate("/profile"), 5000);

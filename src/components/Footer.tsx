@@ -1,5 +1,6 @@
 import logo from "@/assets/logo-transparent.png";
 import { NavLink } from "@/components/NavLink";
+import { Play } from "lucide-react";
 
 const Footer = () => {
   return (
@@ -16,9 +17,20 @@ const Footer = () => {
             <p className="text-muted-foreground">
               Your AI-powered cooking companion. Turn ingredients into amazing meals with personalized recipe suggestions.
             </p>
-            {/* Social Icons Placeholder */}
-            <div className="flex gap-4">
-              {/* Add social icons here if needed */}
+            {/* App Stores */}
+            <div className="flex gap-4 mt-6">
+              <div className="relative group cursor-not-allowed opacity-80 hover:opacity-100 transition-opacity">
+                <div className="bg-black text-white px-4 py-2 rounded-lg flex items-center gap-2 border border-white/10 shadow-sm">
+                  <Play className="w-6 h-6 fill-current" />
+                  <div className="flex flex-col text-left">
+                    <span className="text-[10px] leading-tight uppercase font-medium">Get it on</span>
+                    <span className="text-sm font-bold leading-tight">Google Play</span>
+                  </div>
+                </div>
+                <div className="absolute -top-3 -right-3 bg-primary text-primary-foreground text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm animate-pulse">
+                  Coming Soon
+                </div>
+              </div>
             </div>
           </div>
 
